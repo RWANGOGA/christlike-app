@@ -38,7 +38,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",  # Your local Next.js frontend
-        "http://localhost:3001",  # Your Docker Next.js frontend
+        "http://localhost:3001",
+        "https://christlike-app.vercel.app" # Your Docker Next.js frontend
     ],
     allow_credentials=True,
     allow_methods=["*"],  # Allow all HTTP methods
