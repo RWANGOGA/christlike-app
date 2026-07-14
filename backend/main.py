@@ -16,12 +16,12 @@ from models import (
     BibleBook, BibleChapter, BibleVerse, 
     Category, Lesson, SermonSeries, Sermon,
     Devotion, FactForFaith, PrayerRequest,
-    User, UserProgress, ContentCompletion  # 👈 ADDED ContentCompletion
+    User, UserProgress, ContentCompletion
 )
 from schemas import (
     UserCreate, UserLogin, Token, UserResponse,
     DevotionCreate, SermonSeriesCreate, SermonCreate,
-    FactCreate, PrayerRequestCreate, UserUpdate  # <--- ADD THIS
+    FactCreate, PrayerRequestCreate, UserUpdate
 )
 from auth import (
     verify_password,
@@ -66,7 +66,7 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
         email=user_in.email,
         username=user_in.username,
         hashed_password=get_password_hash(user_in.password),
-        is_admin=user_in.email.lower() in ADMIN_EMAILS,   # 🆕
+        is_admin=user_in.email.lower() in ADMIN_EMAILS,
     )
     db.add(new_user)
     db.commit()
@@ -156,34 +156,74 @@ def read_current_user_progress(
     progress = db.query(UserProgress).filter(UserProgress.user_id == current_user.id).all()
     return progress
 
-# ==================== BIBLE API ENDPOINTS (bolls.life) ====================
-BIBLE_TRANSLATION = "KJV"  # public domain, no API key required
+# ==================== BIBLE API ENDPOINTS ====================
+# Switched from bolls.life to bible.helloao.org (Free Use Bible API):
+# open source, AWS-hosted, no API key, no rate limits.
+# Source: https://github.com/HelloAOLab/bible-api
+BIBLE_TRANSLATION = "BSB"  # Berean Standard Bible - public domain, modern English
 
 @app.get("/api/bible/books")
 async def get_bible_books():
-    """Fetch the full list of Bible books (with chapter counts) from bolls.life"""
+    """Fetch the full list of Bible books (with chapter counts) from bible.helloao.org"""
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"https://bolls.life/get-books/{BIBLE_TRANSLATION}/")
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"https://bible.helloao.org/api/{BIBLE_TRANSLATION}/books.json")
             response.raise_for_status()
-            return response.json()
-    except httpx.HTTPError:
+            data = response.json()
+            # Reshape to match what the frontend already expects: bookid, name, chapters
+            books = [
+                {
+                    "bookid": b["id"],  # e.g. "GEN" (string, not numeric like bolls.life)
+                    "name": b.get("commonName") or b.get("name"),
+                    "chapters": b["numberOfChapters"],
+                }
+                for b in data.get("books", [])
+            ]
+            return books
+    except httpx.HTTPError as e:
+        print(f"Bible API (books) fetch failed: {type(e).__name__}: {e}")
         raise HTTPException(status_code=502, detail="Failed to reach Bible API")
 
 @app.get("/api/bible/chapter/{book_id}/{chapter}")
-async def get_bible_chapter(book_id: int, chapter: int):
-    """Fetch all verses for a specific book  or books + chapter from bolls.life"""
+async def get_bible_chapter(book_id: str, chapter: int):
+    """Fetch all verses for a specific book + chapter from bible.helloao.org.
+    The upstream response mixes headings, line breaks, and verses in one
+    'content' array — this flattens it down to just the verses, in the same
+    {pk, verse, text} shape the frontend already renders."""
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(
-                f"https://bolls.life/get-chapter/{BIBLE_TRANSLATION}/{book_id}/{chapter}/"
+                f"https://bible.helloao.org/api/{BIBLE_TRANSLATION}/{book_id}/{chapter}.json"
             )
             response.raise_for_status()
             data = response.json()
-            if not data:
+            content = data.get("chapter", {}).get("content", [])
+
+            verses = []
+            for item in content:
+                if item.get("type") != "verse":
+                    continue  # skip headings, line breaks, Hebrew subtitles
+
+                text_parts = []
+                for part in item.get("content", []):
+                    if isinstance(part, str):
+                        text_parts.append(part)
+                    elif isinstance(part, dict) and "text" in part:
+                        text_parts.append(part["text"])
+                    # skip footnote references ({"noteId": ...}) and inline
+                    # headings/line breaks — they don't contribute verse text
+
+                verses.append({
+                    "pk": f"{book_id}-{chapter}-{item['number']}",
+                    "verse": item["number"],
+                    "text": " ".join(text_parts).strip(),
+                })
+
+            if not verses:
                 raise HTTPException(status_code=404, detail="Chapter not found")
-            return data
-    except httpx.HTTPError:
+            return verses
+    except httpx.HTTPError as e:
+        print(f"Bible API (chapter) fetch failed: {type(e).__name__}: {e}")
         raise HTTPException(status_code=502, detail="Failed to reach Bible API")
 
 # ==================== CONTENT ENDPOINTS ====================
@@ -201,7 +241,7 @@ def get_lessons(category_id: int, db: Session = Depends(get_db)):
 
 @app.get("/api/sermon-series")
 def get_sermon_series(db: Session = Depends(get_db)):
-    """Get all sermon seriesnow"""
+    """Get all sermon series"""
     series = db.query(SermonSeries).filter(SermonSeries.is_active == True).all()
     return series
 
@@ -267,11 +307,6 @@ def update_progress(user_id: int, progress_data: dict, db: Session = Depends(get
         db.refresh(new_progress)
         return new_progress
 
-# ==================== ADMIN LOGIC & CONTENT CREATION ====================
-
-
-# Bootstrap secret comes from an environment variable in production — falls
-# back to a dev-only default so local testing still works out of the box.
 # ==================== ADMIN LOGIC & CONTENT CREATION ====================
 
 ADMIN_BOOTSTRAP_SECRET = os.environ.get("ADMIN_BOOTSTRAP_SECRET", "JOAPP-MASTER-KEY-2026")
@@ -496,7 +531,7 @@ def update_user_profile(
     if data.faith_journey_stage:
         current_user.faith_journey_stage = data.faith_journey_stage
 
-    if data.show_on_leaderboard is not None:  # 👈 ADDED: leaderboard opt-in toggle
+    if data.show_on_leaderboard is not None:
         current_user.show_on_leaderboard = data.show_on_leaderboard
 
     if data.new_password:
@@ -543,7 +578,7 @@ def impersonate_user(user_id: int, admin: User = Depends(require_admin), db: Ses
     token = create_access_token(data={"sub": target_user.email})
     return {"access_token": token, "token_type": "bearer"}
 
-# ==================== CONTENT COMPLETION TRACKING (NEW) ====================
+# ==================== CONTENT COMPLETION TRACKING ====================
 
 @app.post("/api/devotions/{devotion_id}/complete")
 def mark_devotion_complete(devotion_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -583,7 +618,7 @@ def get_my_completed_devotions(current_user: User = Depends(get_current_user), d
     ).all()
     return {"completed_ids": [r[0] for r in rows]}
 
-# ==================== LEADERBOARD (NEW, OPT-IN) ====================
+# ==================== LEADERBOARD (OPT-IN) ====================
 
 @app.get("/api/leaderboard")
 def get_leaderboard(db: Session = Depends(get_db)):

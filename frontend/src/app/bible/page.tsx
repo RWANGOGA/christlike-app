@@ -6,13 +6,13 @@ import { BookOpen, Play, Pause, Square, Volume2, Settings2, ChevronDown } from '
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 interface Book {
-  bookid: number;
+  bookid: string;   // 👈 CHANGED: was number (bolls.life), now string like "GEN" (bible.helloao.org)
   name: string;
   chapters: number;
 }
 
 interface Verse {
-  pk: number;
+  pk: string;        // 👈 CHANGED: was number, now a composite string key from the backend
   verse: number;
   text: string;
 }
@@ -27,7 +27,7 @@ function cleanVerseText(raw: string): string {
 
 export default function BibleReader() {
   const [books, setBooks] = useState<Book[]>([]);
-  const [selectedBookId, setSelectedBookId] = useState<number | null>(null);
+  const [selectedBookId, setSelectedBookId] = useState<string | null>(null);  // 👈 CHANGED: string | null
   const [chapter, setChapter] = useState<number | null>(null);
   const [verses, setVerses] = useState<Verse[]>([]);
   const [loading, setLoading] = useState(false);
@@ -114,7 +114,7 @@ export default function BibleReader() {
 
   const selectedBook = books.find((b) => b.bookid === selectedBookId);
 
-  const pickBook = (bookId: number) => {
+  const pickBook = (bookId: string) => {   // 👈 CHANGED: string param
     setSelectedBookId(bookId);
     setChapter(null); // force chapter picker to show next
     setShowBookPicker(false);
