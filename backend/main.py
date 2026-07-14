@@ -39,7 +39,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",  # Your local Next.js frontend
         "http://localhost:3001",
-        "https://christlike-app.vercel.app" # Your Docker Next.js frontend
+       
+        "https://christlike-app-1.onrender.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],  # Allow all HTTP methods
