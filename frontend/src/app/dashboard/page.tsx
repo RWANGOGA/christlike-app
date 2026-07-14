@@ -8,6 +8,7 @@ import Sidebar from '@/components/Sidebar';
 export default function Dashboard() {
   const [user, setUser] = useState<any>(null);
   const [progress, setProgress] = useState<any[]>([]);
+  const [stats, setStats] = useState({ total_lessons: 0, total_categories: 0 });
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
@@ -18,8 +19,9 @@ export default function Dashboard() {
         setUser(userData);
         const progressData = await api.get('/users/me/progress');
         setProgress(progressData);
-        
-        // Log daily activity to update streak
+        const statsData = await api.get('/api/stats');
+        setStats(statsData);
+
         try { await api.post('/users/me/activity', {}); } catch (e) {}
       } catch (error) {
         router.replace('/');
@@ -41,14 +43,13 @@ export default function Dashboard() {
   return (
     <div className="flex bg-[#FBF7EE] min-h-screen">
       <Sidebar />
-      <div className="flex-1 ml-64 p-8 max-w-6xl">
+      <div className="flex-1 ml-0 md:ml-64 pt-20 md:pt-8 px-4 md:px-8 pb-8 max-w-6xl w-full">
         <header className="mb-8">
-          <h1 className="font-[family-name:var(--font-display)] text-2xl text-[#23213A]">
+          <h1 className="font-[family-name:var(--font-display)] text-xl md:text-2xl text-[#23213A]">
             Welcome back, {user?.username}
           </h1>
-          <p className="text-[#23213A]/50 mt-1">Here is your spiritual growth overview.</p>
-          
-          {/* Streak Badge */}
+          <p className="text-[#23213A]/50 mt-1 text-sm md:text-base">Here is your spiritual growth overview.</p>
+
           {user?.streak_count > 0 && (
             <div className="inline-flex items-center gap-2 mt-4 px-4 py-2 rounded-full bg-[#E3A857]/10 border border-[#E3A857]/20">
               <Flame className="w-4 h-4 text-[#E3A857]" fill="currentColor" />
@@ -57,17 +58,17 @@ export default function Dashboard() {
           )}
         </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-xl border border-[#23213A]/10">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 mb-8">
+          <div className="bg-white p-5 md:p-6 rounded-xl border border-[#23213A]/10">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-medium text-[#23213A]/50">Total Lessons</h3>
               <BookOpen className="w-5 h-5 text-[#E3A857]" strokeWidth={1.5} />
             </div>
-            <p className="text-2xl font-semibold text-[#23213A]">24</p>
-            <p className="text-xs text-[#23213A]/40 mt-1">Across 3 categories</p>
+            <p className="text-2xl font-semibold text-[#23213A]">{stats.total_lessons}</p>
+            <p className="text-xs text-[#23213A]/40 mt-1">Across {stats.total_categories} categories</p>
           </div>
 
-          <div className="bg-white p-6 rounded-xl border border-[#23213A]/10">
+          <div className="bg-white p-5 md:p-6 rounded-xl border border-[#23213A]/10">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-medium text-[#23213A]/50">Completed</h3>
               <Target className="w-5 h-5 text-[#E3A857]" strokeWidth={1.5} />
@@ -78,7 +79,7 @@ export default function Dashboard() {
             <p className="text-xs text-[#23213A]/40 mt-1">Keep up the great work</p>
           </div>
 
-          <div className="bg-white p-6 rounded-xl border border-[#23213A]/10">
+          <div className="bg-white p-5 md:p-6 rounded-xl border border-[#23213A]/10">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-medium text-[#23213A]/50">In Progress</h3>
               <TrendingUp className="w-5 h-5 text-[#E3A857]" strokeWidth={1.5} />

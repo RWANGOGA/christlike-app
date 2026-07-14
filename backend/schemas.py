@@ -64,3 +64,4 @@ class UserUpdate(BaseModel):
     faith_journey_stage: Optional[str] = None
     current_password: Optional[str] = None
     new_password: Optional[str] = None
+    show_on_leaderboard: bool | None = None   # 👈 ADD THIS LINE

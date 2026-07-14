@@ -1,5 +1,5 @@
 # backend/models.py
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean, Float
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean, Float, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -19,6 +19,7 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     streak_count = Column(Integer, default=0)
     last_active_date = Column(DateTime(timezone=True), nullable=True)
+    show_on_leaderboard = Column(Boolean, default=False)  # 👈 ADDED: opt-in leaderboard visibility
     
     # Relationships
     progress = relationship("UserProgress", back_populates="user")
@@ -197,3 +198,20 @@ class UserNote(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     user = relationship("User", back_populates="notes")
+
+# ==================== CONTENT COMPLETION TRACKING (NEW) ====================
+class ContentCompletion(Base):
+    """Tracks when a user marks a piece of content (devotion, sermon, fact)
+    as read/watched/completed. content_type + content_id lets this cover
+    multiple content kinds without needing a separate table for each."""
+    __tablename__ = "content_completions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    content_type = Column(String(50), nullable=False)  # "devotion", "sermon", "fact"
+    content_id = Column(Integer, nullable=False)
+    completed_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'content_type', 'content_id', name='_user_content_uc'),
+    )

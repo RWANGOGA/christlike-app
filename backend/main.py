@@ -3,6 +3,8 @@ from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func as sql_func
 from models import User, UserNote 
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
@@ -14,7 +16,7 @@ from models import (
     BibleBook, BibleChapter, BibleVerse, 
     Category, Lesson, SermonSeries, Sermon,
     Devotion, FactForFaith, PrayerRequest,
-    User, UserProgress
+    User, UserProgress, ContentCompletion  # 👈 ADDED ContentCompletion
 )
 from schemas import (
     UserCreate, UserLogin, Token, UserResponse,
@@ -468,6 +470,16 @@ def delete_prayer(prayer_id: int, admin: User = Depends(require_admin), db: Sess
     db.commit()
     return {"message": "Deleted"}
 
+@app.get("/api/stats")
+def get_platform_stats(db: Session = Depends(get_db)):
+    """Live counts, so the dashboard reflects real admin-posted content"""
+    return {
+        "total_lessons": db.query(Lesson).count(),
+        "total_categories": db.query(Category).count(),
+        "total_sermons": db.query(Sermon).count(),
+        "total_devotions": db.query(Devotion).filter(Devotion.is_published == True).count(),
+    }
+
 # ==================== USER SETTINGS & STREAKS ====================
 @app.patch("/users/me")
 def update_user_profile(
@@ -483,7 +495,10 @@ def update_user_profile(
         
     if data.faith_journey_stage:
         current_user.faith_journey_stage = data.faith_journey_stage
-        
+
+    if data.show_on_leaderboard is not None:  # 👈 ADDED: leaderboard opt-in toggle
+        current_user.show_on_leaderboard = data.show_on_leaderboard
+
     if data.new_password:
         if not data.current_password or not verify_password(data.current_password, current_user.hashed_password):
             raise HTTPException(status_code=400, detail="Current password is incorrect")
@@ -527,3 +542,72 @@ def impersonate_user(user_id: int, admin: User = Depends(require_admin), db: Ses
     # Generate a JWT for the target user
     token = create_access_token(data={"sub": target_user.email})
     return {"access_token": token, "token_type": "bearer"}
+
+# ==================== CONTENT COMPLETION TRACKING (NEW) ====================
+
+@app.post("/api/devotions/{devotion_id}/complete")
+def mark_devotion_complete(devotion_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """User marks a devotion as read. Safe to call more than once — the
+    unique constraint on ContentCompletion prevents duplicate rows."""
+    devotion = db.query(Devotion).filter(Devotion.id == devotion_id).first()
+    if not devotion:
+        raise HTTPException(status_code=404, detail="Devotion not found")
+
+    completion = ContentCompletion(
+        user_id=current_user.id,
+        content_type="devotion",
+        content_id=devotion_id,
+    )
+    db.add(completion)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()  # already marked complete — no-op
+    return {"message": "Marked as read"}
+
+@app.get("/api/devotions/{devotion_id}/stats")
+def get_devotion_stats(devotion_id: int, db: Session = Depends(get_db)):
+    """Public, anonymous count of how many people have completed this devotion"""
+    count = db.query(ContentCompletion).filter(
+        ContentCompletion.content_type == "devotion",
+        ContentCompletion.content_id == devotion_id
+    ).count()
+    return {"completed_count": count}
+
+@app.get("/users/me/completed-devotions")
+def get_my_completed_devotions(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Which devotion IDs the current user has completed — used to show checkmarks"""
+    rows = db.query(ContentCompletion.content_id).filter(
+        ContentCompletion.user_id == current_user.id,
+        ContentCompletion.content_type == "devotion"
+    ).all()
+    return {"completed_ids": [r[0] for r in rows]}
+
+# ==================== LEADERBOARD (NEW, OPT-IN) ====================
+
+@app.get("/api/leaderboard")
+def get_leaderboard(db: Session = Depends(get_db)):
+    """Ranks users who opted in (show_on_leaderboard=True) by total content
+    completions, tie-broken by current streak. Users who haven't opted in
+    never appear here."""
+    results = (
+        db.query(
+            User.username,
+            User.streak_count,
+            sql_func.count(ContentCompletion.id).label("total_completions")
+        )
+        .join(ContentCompletion, ContentCompletion.user_id == User.id)
+        .filter(User.show_on_leaderboard == True)
+        .group_by(User.id)
+        .order_by(sql_func.count(ContentCompletion.id).desc(), User.streak_count.desc())
+        .limit(20)
+        .all()
+    )
+    return [
+        {
+            "username": r.username,
+            "streak_count": r.streak_count,
+            "total_completions": r.total_completions,
+        }
+        for r in results
+    ]
