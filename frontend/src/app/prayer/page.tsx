@@ -71,10 +71,10 @@ export default function PrayerWall() {
   return (
     <div className="flex bg-[#FBF7EE] min-h-screen">
       <Sidebar />
-      <div className="flex-1 ml-64 p-8 max-w-3xl mx-auto">
+      <div className="flex-1 ml-0 md:ml-64 pt-20 md:pt-8 px-4 md:px-8 pb-8 max-w-3xl mx-auto w-full">
         <header className="mb-8">
-          <h1 className="font-[family-name:var(--font-display)] text-2xl text-[#23213A]">Prayer Wall</h1>
-          <p className="text-[#23213A]/50 mt-1">Share your burdens and stand in agreement with others.</p>
+          <h1 className="font-[family-name:var(--font-display)] text-xl md:text-2xl text-[#23213A]">Prayer Wall</h1>
+          <p className="text-[#23213A]/50 mt-1 text-sm md:text-base">Share your burdens and stand in agreement with others.</p>
         </header>
 
         {/* 👇 FIX: Show a loading state while checking auth to prevent hydration mismatch */}
@@ -83,7 +83,7 @@ export default function PrayerWall() {
             <div className="w-6 h-6 border-2 border-[#23213A]/20 border-t-[#23213A] rounded-full animate-spin" />
           </div>
         ) : isAuthed ? (
-          <form onSubmit={handleSubmit} className="bg-white p-6 rounded-2xl border border-[#23213A]/10 shadow-sm mb-8">
+          <form onSubmit={handleSubmit} className="bg-white p-4 md:p-6 rounded-2xl border border-[#23213A]/10 shadow-sm mb-8">
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
@@ -92,7 +92,7 @@ export default function PrayerWall() {
               className="w-full px-4 py-3 rounded-lg border border-[#23213A]/15 text-sm focus:outline-none focus:border-[#E3A857] resize-none"
               required
             />
-            <div className="flex items-center justify-between mt-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mt-4">
               <label className="flex items-center gap-2 text-sm text-[#23213A]/70 cursor-pointer">
                 <input 
                   type="checkbox" 
@@ -105,14 +105,14 @@ export default function PrayerWall() {
               <button 
                 type="submit" 
                 disabled={submitting}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[#23213A] text-[#FBF7EE] text-sm font-medium hover:bg-[#171B33] transition disabled:opacity-50"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-[#23213A] text-[#FBF7EE] text-sm font-medium hover:bg-[#171B33] transition disabled:opacity-50"
               >
                 <Send className="w-4 h-4" /> {submitting ? 'Sending...' : 'Submit Request'}
               </button>
             </div>
           </form>
         ) : (
-          <div className="bg-white p-8 rounded-2xl border border-[#23213A]/10 shadow-sm mb-8 text-center">
+          <div className="bg-white p-6 md:p-8 rounded-2xl border border-[#23213A]/10 shadow-sm mb-8 text-center">
             <Heart className="w-10 h-10 text-[#E3A857]/40 mx-auto mb-3" strokeWidth={1.5} />
             <p className="text-[#23213A]/70 mb-4">Please log in to share your prayer requests with the community.</p>
             <button 
@@ -132,7 +132,7 @@ export default function PrayerWall() {
         ) : prayers.length > 0 ? (
           <div className="space-y-4">
             {prayers.map((p) => (
-              <div key={p.id} className="bg-white p-6 rounded-2xl border border-[#23213A]/10 shadow-sm">
+              <div key={p.id} className="bg-white p-4 md:p-6 rounded-2xl border border-[#23213A]/10 shadow-sm">
                 <p className="text-[#23213A]/80 leading-relaxed mb-4">{p.content}</p>
                 <div className="flex items-center justify-between pt-4 border-t border-[#23213A]/5">
                   <span className="text-xs text-[#23213A]/40">
@@ -151,7 +151,7 @@ export default function PrayerWall() {
             ))}
           </div>
         ) : (
-          <div className="bg-white p-12 rounded-2xl border border-[#23213A]/10 text-center">
+          <div className="bg-white p-8 md:p-12 rounded-2xl border border-[#23213A]/10 text-center">
             <Heart className="w-12 h-12 text-[#23213A]/20 mx-auto mb-4" strokeWidth={1.5} />
             <p className="text-[#23213A]/50">No prayer requests yet. Be the first to share.</p>
           </div>

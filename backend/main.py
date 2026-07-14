@@ -201,7 +201,7 @@ def get_lessons(category_id: int, db: Session = Depends(get_db)):
 
 @app.get("/api/sermon-series")
 def get_sermon_series(db: Session = Depends(get_db)):
-    """Get all sermon series"""
+    """Get all sermon seriesnow"""
     series = db.query(SermonSeries).filter(SermonSeries.is_active == True).all()
     return series
 

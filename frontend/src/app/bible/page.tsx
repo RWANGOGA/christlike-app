@@ -194,12 +194,12 @@ export default function BibleReader() {
   return (
     <div className="flex bg-[#FBF7EE] min-h-screen">
       <Sidebar />
-      <div className="flex-1 ml-64 p-8 max-w-4xl mx-auto">
+      <div className="flex-1 ml-0 md:ml-64 pt-20 md:pt-8 px-4 md:px-8 pb-8 max-w-4xl mx-auto w-full">
         <header className="mb-8">
-          <h1 className="font-[family-name:var(--font-display)] text-2xl text-[#23213A]">
+          <h1 className="font-[family-name:var(--font-display)] text-xl md:text-2xl text-[#23213A]">
             Read the Bible
           </h1>
-          <p className="text-[#23213A]/50 mt-1">Immerse yourself in the Word.</p>
+          <p className="text-[#23213A]/50 mt-1 text-sm md:text-base">Immerse yourself in the Word.</p>
         </header>
 
         {/* Book selector bar */}
@@ -214,7 +214,7 @@ export default function BibleReader() {
           </button>
 
           {showBookPicker && (
-            <div className="mt-4 pt-4 border-t border-[#23213A]/10 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-72 overflow-y-auto">
+            <div className="mt-4 pt-4 border-t border-[#23213A]/10 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 max-h-72 overflow-y-auto">
               {books.map((book) => (
                 <button
                   key={book.bookid}
@@ -250,7 +250,7 @@ export default function BibleReader() {
             </div>
 
             {chapter === null && (
-              <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-2">
+              <div className="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-10 gap-2">
                 {Array.from({ length: selectedBook.chapters }, (_, i) => i + 1).map((num) => (
                   <button
                     key={num}
@@ -268,11 +268,11 @@ export default function BibleReader() {
         {/* Audio Player Controls */}
         {verses.length > 0 && (
           <div className="bg-white p-4 rounded-xl border border-[#23213A]/10 mb-6 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3 md:gap-4">
                 <button
                   onClick={handlePlay}
-                  className="w-12 h-12 rounded-full bg-[#E3A857] flex items-center justify-center hover:bg-[#E3A857]/90 transition"
+                  className="w-12 h-12 rounded-full bg-[#E3A857] flex items-center justify-center hover:bg-[#E3A857]/90 transition flex-shrink-0"
                 >
                   {isPlaying ? (
                     <Pause className="w-5 h-5 text-[#171B33]" fill="currentColor" />
@@ -282,11 +282,11 @@ export default function BibleReader() {
                 </button>
                 <button
                   onClick={handleStop}
-                  className="w-10 h-10 rounded-full bg-[#23213A]/10 flex items-center justify-center hover:bg-[#23213A]/20 transition"
+                  className="w-10 h-10 rounded-full bg-[#23213A]/10 flex items-center justify-center hover:bg-[#23213A]/20 transition flex-shrink-0"
                 >
                   <Square className="w-4 h-4 text-[#23213A]" fill="currentColor" />
                 </button>
-                <div className="flex items-center gap-2 text-sm text-[#23213A]/60">
+                <div className="flex items-center gap-2 text-xs md:text-sm text-[#23213A]/60">
                   <Volume2 className="w-4 h-4" />
                   <span>Verse {currentVerseIndex + 1} of {verses.length}</span>
                 </div>
@@ -306,7 +306,7 @@ export default function BibleReader() {
                   <label className="text-xs font-medium text-[#23213A]/70 mb-2 block">
                     Playback Speed: {speechRate}x
                   </label>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     {[0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => (
                       <button
                         key={rate}
@@ -353,7 +353,7 @@ export default function BibleReader() {
         )}
 
         {/* Reading Area */}
-        <div className="bg-white p-8 md:p-12 rounded-xl border border-[#23213A]/10 min-h-[60vh]">
+        <div className="bg-white p-5 md:p-12 rounded-xl border border-[#23213A]/10 min-h-[60vh]">
           {loading ? (
             <div className="flex items-center justify-center h-64">
               <div className="w-8 h-8 border-2 border-[#23213A]/20 border-t-[#23213A] rounded-full animate-spin" />
@@ -362,14 +362,14 @@ export default function BibleReader() {
             <p className="text-center text-[#23213A]/50">{error}</p>
           ) : verses.length > 0 ? (
             <div>
-              <h2 className="font-[family-name:var(--font-display)] text-xl text-[#23213A] mb-6 border-b border-[#23213A]/10 pb-4">
+              <h2 className="font-[family-name:var(--font-display)] text-lg md:text-xl text-[#23213A] mb-6 border-b border-[#23213A]/10 pb-4">
                 {selectedBook?.name} {chapter}
               </h2>
               <div className="space-y-4">
                 {verses.map((verse, index) => (
                   <p
                     key={verse.pk}
-                    className={`font-serif text-lg leading-relaxed transition-all duration-300 p-2 rounded-lg ${
+                    className={`font-serif text-base md:text-lg leading-relaxed transition-all duration-300 p-2 rounded-lg ${
                       index === currentVerseIndex && isPlaying
                         ? 'bg-[#E3A857]/20 text-[#23213A]'
                         : 'text-[#23213A]/80'

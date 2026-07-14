@@ -7,7 +7,6 @@ import Link from 'next/link';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-// Helper to extract YouTube Video ID from any YouTube URL
 function getYouTubeId(url: string) {
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
   const match = url.match(regExp);
@@ -29,10 +28,13 @@ export default function SeriesPage() {
         if (res.ok) {
           const data = await res.json();
           setSermons(data);
-          if (data.length > 0) setActiveVideo(data[0]); // Auto-play first video
+          if (data.length > 0) setActiveVideo(data[0]);
         }
-      } catch (err) { console.error(err); } 
-      finally { setLoading(false); }
+      } catch (err) { 
+        console.error(err); 
+      } finally { 
+        setLoading(false); 
+      }
     };
     fetchSermons();
   }, [seriesId]);
@@ -40,14 +42,15 @@ export default function SeriesPage() {
   return (
     <div className="flex bg-[#FBF7EE] min-h-screen">
       <Sidebar />
-      <div className="flex-1 ml-64 p-8 max-w-6xl mx-auto">
+      
+      <div className="flex-1 ml-0 lg:ml-64 p-4 md:p-6 lg:p-8 max-w-6xl mx-auto w-full">
         <Link href="/sermons" className="inline-flex items-center gap-2 text-sm text-[#23213A]/60 hover:text-[#23213A] mb-6 transition">
           <ArrowLeft className="w-4 h-4" /> Back to Series
         </Link>
 
-        <header className="mb-8">
-          <h1 className="font-[family-name:var(--font-display)] text-2xl text-[#23213A]">Series Messages</h1>
-          <p className="text-[#23213A]/50 mt-1">Watch and listen to the messages.</p>
+        <header className="mb-6 md:mb-8">
+          <h1 className="font-[family-name:var(--font-display)] text-2xl md:text-3xl text-[#23213A]">Series Messages</h1>
+          <p className="text-[#23213A]/50 mt-1 text-sm md:text-base">Watch and listen to the messages.</p>
         </header>
 
         {loading ? (
@@ -55,7 +58,7 @@ export default function SeriesPage() {
             <div className="w-8 h-8 border-2 border-[#23213A]/20 border-t-[#23213A] rounded-full animate-spin" />
           </div>
         ) : sermons.length > 0 ? (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
             {/* Main Video Player */}
             <div className="lg:col-span-2">
               {activeVideo ? (
@@ -70,15 +73,15 @@ export default function SeriesPage() {
                         allowFullScreen
                       />
                     ) : (
-                      <div className="flex items-center justify-center h-full text-white/50">
-                        <p>Video URL is not a valid YouTube link.</p>
+                      <div className="flex items-center justify-center h-full text-white/50 p-4">
+                        <p className="text-center">Video URL is not a valid YouTube link.</p>
                       </div>
                     )}
                   </div>
-                  <div className="p-6">
-                    <h2 className="font-[family-name:var(--font-display)] text-xl text-[#23213A] mb-2">{activeVideo.title}</h2>
+                  <div className="p-4 md:p-6">
+                    <h2 className="font-[family-name:var(--font-display)] text-lg md:text-xl text-[#23213A] mb-2">{activeVideo.title}</h2>
                     <p className="text-sm text-[#23213A]/50 mb-4">{activeVideo.speaker_name} • {activeVideo.bible_passage}</p>
-                    <p className="text-[#23213A]/70 leading-relaxed">{activeVideo.description}</p>
+                    <p className="text-[#23213A]/70 leading-relaxed text-sm md:text-base">{activeVideo.description}</p>
                   </div>
                 </div>
               ) : (
@@ -88,10 +91,10 @@ export default function SeriesPage() {
 
             {/* Playlist Sidebar */}
             <div className="bg-white rounded-2xl border border-[#23213A]/10 overflow-hidden shadow-sm h-fit">
-              <div className="p-4 border-b border-[#23213A]/5 bg-[#FBF7EE]">
+              <div className="p-4 border-b border-[#23213A]/5 bg-[#FBF7EE] sticky top-0 z-10">
                 <h3 className="font-semibold text-[#23213A] text-sm uppercase tracking-wide">Playlist</h3>
               </div>
-              <ul className="divide-y divide-[#23213A]/5 max-h-[600px] overflow-y-auto">
+              <ul className="divide-y divide-[#23213A]/5 max-h-[500px] md:max-h-[600px] overflow-y-auto">
                 {sermons.map((s) => (
                   <li key={s.id}>
                     <button
@@ -103,7 +106,7 @@ export default function SeriesPage() {
                       <div className="w-8 h-8 rounded bg-[#23213A]/5 flex items-center justify-center flex-shrink-0">
                         <Play className="w-3 h-3 text-[#23213A]/50" fill="currentColor" />
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-[#23213A] line-clamp-2">{s.title}</p>
                         <p className="text-xs text-[#23213A]/50 mt-1">{s.speaker_name}</p>
                       </div>
@@ -114,7 +117,7 @@ export default function SeriesPage() {
             </div>
           </div>
         ) : (
-          <div className="bg-white p-12 rounded-2xl border border-[#23213A]/10 text-center">
+          <div className="bg-white p-8 md:p-12 rounded-2xl border border-[#23213A]/10 text-center">
             <p className="text-[#23213A]/50">No sermons have been added to this series yet.</p>
           </div>
         )}
