@@ -20,15 +20,15 @@ class UserResponse(BaseModel):
     email: EmailStr
     username: str
     faith_journey_stage: Optional[str] = None
-    is_admin: bool = False 
+    is_admin: bool = False
 
-    class Config:
+    class Config:          # 👈 now correctly nested inside UserResponse
         from_attributes = True
-        
+
 # ==================== ADMIN CONTENT SCHEMAS ====================
 class DevotionCreate(BaseModel):
     title: str
-    date: str  # Format: "YYYY-MM-DD"
+    date: str
     bible_reference: str
     content: str
     author: str
@@ -45,7 +45,8 @@ class SermonCreate(BaseModel):
     description: str
     speaker_name: str
     video_url: str
-    bible_passage: str | None = None        
+    bible_passage: str | None = None
+
 # ==================== FACTS & PRAYER SCHEMAS ====================
 class FactCreate(BaseModel):
     title: str
@@ -64,4 +65,4 @@ class UserUpdate(BaseModel):
     faith_journey_stage: Optional[str] = None
     current_password: Optional[str] = None
     new_password: Optional[str] = None
-    show_on_leaderboard: bool | None = None   # 👈 ADD THIS LINE
+    show_on_leaderboard: bool | None = None

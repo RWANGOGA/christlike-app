@@ -12,7 +12,7 @@ services:
       - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    # ADDED: Healthcheck so the backend condition: service_healthy works
+    # Healthcheck so the backend's condition: service_healthy works
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U joapp_user -d joapp_db"]
       interval: 5s
@@ -23,7 +23,7 @@ services:
   backend:
     build: ./backend
     ports:
-      - "8000:8000"
+      - "8001:8000"   # host 8001 -> container 8000 (container stays on 8000 internally)
     environment:
       - DATABASE_URL=postgresql://joapp_user:Jesus1@db:5432/joapp_db
     depends_on:
@@ -38,9 +38,12 @@ services:
     ports:
       - "3001:3000"
     environment:
-      # Note: Change this to http://backend:8000 if you do data fetching 
-      # inside getServerSideProps or App Router server components!
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      # Points at the HOST-side port (8001) since the browser calls this directly.
+      # Only use http://backend:8000 instead if fetching from getServerSideProps
+      # or App Router server components (server-side code runs inside the
+      # Docker network, where the backend is reachable as "backend" on its
+      # internal port 8000 — not via the host-mapped 8001).
+      - NEXT_PUBLIC_API_URL=http://localhost:8001
     depends_on:
       - backend
     volumes:
@@ -49,4 +52,4 @@ services:
       - /app/.next
 
 volumes:
-  postgres_data: {} # FIXED: Added the required braces here
+  postgres_data: {}
