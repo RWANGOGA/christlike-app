@@ -128,8 +128,8 @@ export default function NotesPage() {
     return (
       <div className="flex bg-[#FBF7EE] min-h-screen">
         <Sidebar />
-        <div className="flex-1 ml-64 p-8 flex items-center justify-center">
-          <div className="bg-white p-12 rounded-2xl border border-[#23213A]/10 text-center max-w-md">
+        <div className="flex-1 ml-0 md:ml-64 pt-20 md:pt-8 px-4 md:px-8 pb-8 flex items-center justify-center">
+          <div className="bg-white p-8 md:p-12 rounded-2xl border border-[#23213A]/10 text-center max-w-md">
             <FileText className="w-12 h-12 text-[#E3A857]/40 mx-auto mb-4" strokeWidth={1.5} />
             <p className="text-[#23213A]/70 mb-4">Please log in to access your notes.</p>
             <button 
@@ -155,21 +155,21 @@ export default function NotesPage() {
   return (
     <div className="flex bg-[#FBF7EE] min-h-screen">
       <Sidebar />
-      <div className="flex-1 ml-64 p-8 max-w-5xl mx-auto">
-        <header className="mb-8 flex items-center justify-between">
+      <div className="flex-1 ml-0 md:ml-64 pt-20 md:pt-8 px-4 md:px-8 pb-8 max-w-5xl mx-auto w-full">
+        <header className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="font-[family-name:var(--font-display)] text-2xl text-[#23213A]">My Notes</h1>
-            <p className="text-[#23213A]/50 mt-1">Capture your thoughts and insights.</p>
+            <h1 className="font-[family-name:var(--font-display)] text-xl md:text-2xl text-[#23213A]">My Notes</h1>
+            <p className="text-[#23213A]/50 mt-1 text-sm md:text-base">Capture your thoughts and insights.</p>
           </div>
           <div className="flex gap-3">
             <button
               onClick={handleCreate}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#23213A] text-[#FBF7EE] text-sm font-medium hover:bg-[#171B33] transition"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#23213A] text-[#FBF7EE] text-sm font-medium hover:bg-[#171B33] transition"
             >
               <Plus className="w-4 h-4" /> New Note
             </button>
-            <div className="relative group">
-              <button className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-white border border-[#23213A]/15 text-[#23213A] text-sm font-medium hover:bg-[#FBF7EE] transition">
+            <div className="relative group flex-1 sm:flex-none">
+              <button className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-white border border-[#23213A]/15 text-[#23213A] text-sm font-medium hover:bg-[#FBF7EE] transition">
                 <Download className="w-4 h-4" /> Export
               </button>
               <div className="absolute right-0 mt-2 w-40 bg-white rounded-lg shadow-lg border border-[#23213A]/10 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
@@ -182,7 +182,7 @@ export default function NotesPage() {
         </header>
 
         {notes.length === 0 ? (
-          <div className="bg-white p-12 rounded-2xl border border-[#23213A]/10 text-center">
+          <div className="bg-white p-8 md:p-12 rounded-2xl border border-[#23213A]/10 text-center">
             <FileText className="w-12 h-12 text-[#23213A]/20 mx-auto mb-4" strokeWidth={1.5} />
             <p className="text-[#23213A]/50 mb-4">No notes yet. Start capturing your thoughts!</p>
             <button
@@ -195,10 +195,10 @@ export default function NotesPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {notes.map((note) => (
-              <div key={note.id} className="bg-white p-6 rounded-xl border border-[#23213A]/10 hover:shadow-md transition">
-                <div className="flex items-start justify-between mb-3">
+              <div key={note.id} className="bg-white p-5 md:p-6 rounded-xl border border-[#23213A]/10 hover:shadow-md transition">
+                <div className="flex items-start justify-between mb-3 gap-2">
                   <h3 className="font-[family-name:var(--font-display)] text-lg text-[#23213A] line-clamp-1">{note.title}</h3>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-shrink-0">
                     <button
                       onClick={() => handleEdit(note)}
                       className="p-1.5 rounded-lg hover:bg-[#23213A]/5 text-[#23213A]/60 transition"
@@ -226,15 +226,15 @@ export default function NotesPage() {
         {showEditor && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
             <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-              <div className="flex items-center justify-between p-6 border-b border-[#23213A]/10">
-                <h2 className="font-[family-name:var(--font-display)] text-xl text-[#23213A]">
+              <div className="flex items-center justify-between p-4 md:p-6 border-b border-[#23213A]/10">
+                <h2 className="font-[family-name:var(--font-display)] text-lg md:text-xl text-[#23213A]">
                   {editingNote ? 'Edit Note' : 'New Note'}
                 </h2>
                 <button onClick={() => setShowEditor(false)} className="p-2 rounded-lg hover:bg-[#23213A]/5">
                   <X className="w-5 h-5 text-[#23213A]" />
                 </button>
               </div>
-              <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-6 space-y-4">
+              <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
                 <div>
                   <label className="block text-xs font-medium text-[#23213A]/70 mb-1.5">Title</label>
                   <input
@@ -253,11 +253,11 @@ export default function NotesPage() {
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
                     placeholder="Write your thoughts..."
-                    rows={12}
+                    rows={10}
                     className="w-full px-3.5 py-2.5 rounded-lg border border-[#23213A]/15 text-sm focus:outline-none focus:border-[#E3A857] resize-none"
                   />
                 </div>
-                <div className="flex justify-end gap-3">
+                <div className="flex flex-col-reverse sm:flex-row justify-end gap-3">
                   <button
                     type="button"
                     onClick={() => setShowEditor(false)}
@@ -267,7 +267,7 @@ export default function NotesPage() {
                   </button>
                   <button
                     type="submit"
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[#23213A] text-[#FBF7EE] text-sm font-medium hover:bg-[#171B33] transition"
+                    className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-[#23213A] text-[#FBF7EE] text-sm font-medium hover:bg-[#171B33] transition"
                   >
                     <Save className="w-4 h-4" /> Save Note
                   </button>
