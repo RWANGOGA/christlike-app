@@ -172,7 +172,7 @@ async def get_bible_books():
 
 @app.get("/api/bible/chapter/{book_id}/{chapter}")
 async def get_bible_chapter(book_id: int, chapter: int):
-    """Fetch all verses for a specific book + chapter from bolls.life"""
+    """Fetch all verses for a specific book  or books + chapter from bolls.life"""
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
