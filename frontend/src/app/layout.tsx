@@ -1,7 +1,7 @@
 // frontend/src/app/layout.tsx
 import { Spectral, Inter } from 'next/font/google';
 import './globals.css';
-import Header from '@/components/Header'; // 👈 Added Header import
+import Header from '@/components/Header';
 
 const spectral = Spectral({
   subsets: ['latin'],
@@ -42,13 +42,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         className={`${spectral.variable} ${inter.variable} font-sans bg-[#F5EFE6]`}
         suppressHydrationWarning
       >
-        {/* 👇 Header is now fixed at the top of every page */}
+        {/* 
+          Header is fixed (position: fixed). 
+          It automatically hides itself on /admin and /dashboard routes.
+        */}
         <Header />
         
-        {/* 👇 Main wrapper with pt-20 (80px) top padding so content isn't hidden behind the fixed header */}
-        <main className="min-h-screen pt-20">
-          {children}
-        </main>
+        {/* 
+          Render children directly without a global pt-20 wrapper. 
+          - Public pages (Home, About, Features) add their own pt-20 or pt-24.
+          - Admin/Dashboard pages don't have the Header, so they don't need the padding.
+        */}
+        {children}
       </body>
     </html>
   );

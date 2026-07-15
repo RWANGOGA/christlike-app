@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { BookOpen, Heart, Users, Sun, Headphones, Video, FileText, MessageCircle } from 'lucide-react';
 import AuthModal from '@/components/AuthModal';
@@ -10,6 +10,16 @@ export default function Landing() {
   const [showAuth, setShowAuth] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Listen for modal triggers from the global Header (?modal=login or ?modal=register)
+  useEffect(() => {
+    const modal = searchParams.get('modal');
+    if (modal === 'login' || modal === 'register') {
+      setAuthMode(modal === 'login' ? 'login' : 'register');
+      setShowAuth(true);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -37,29 +47,10 @@ export default function Landing() {
   }
 
   return (
-    <div className="relative min-h-screen bg-[#F5EFE6] overflow-hidden flex flex-col">
-      {/* Navigation */}
-      <nav className="relative z-10 flex items-center justify-between px-4 sm:px-8 py-4 sm:py-6 max-w-7xl mx-auto w-full">
-        <span className="font-[family-name:var(--font-display)] text-lg sm:text-2xl text-[#5A4A4A] tracking-wide">
-          Christ-Like
-        </span>
-        <div className="flex items-center gap-2 sm:gap-4">
-          <button
-            onClick={() => { setAuthMode('login'); setShowAuth(true); }}
-            className="text-xs sm:text-sm text-[#5A4A4A]/70 hover:text-[#5A4A4A] transition font-medium px-2"
-          >
-            Sign In
-          </button>
-          <button
-            onClick={() => { setAuthMode('register'); setShowAuth(true); }}
-            className="text-xs sm:text-sm px-4 sm:px-6 py-2 sm:py-2.5 rounded-full bg-[#D4A5A5] text-white font-medium hover:bg-[#C99595] transition shadow-lg shadow-[#D4A5A5]/30 whitespace-nowrap"
-          >
-            Get Started
-          </button>
-        </div>
-      </nav>
-
-      {/* Hero Section — image now used as full background */}
+    // pt-24 ensures content isn't hidden behind the fixed global Header
+    <div className="relative min-h-screen bg-[#F5EFE6] overflow-hidden flex flex-col pt-24">
+      
+      {/* Hero Section */}
       <main className="relative z-10 flex-1">
         <section className="relative">
           <div
@@ -648,8 +639,15 @@ export default function Landing() {
       {showAuth && (
         <AuthModal
           initialMode={authMode}
-          onSuccess={() => setShowAuth(false)}
-          onClose={() => setShowAuth(false)}
+          onSuccess={() => {
+            setShowAuth(false);
+            // Clear the URL parameter after successful login
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }}
+          onClose={() => {
+            setShowAuth(false);
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }}
         />
       )}
     </div>

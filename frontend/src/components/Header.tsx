@@ -2,13 +2,17 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { Menu, X } from 'lucide-react';
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const pathname = usePathname();
-  const router = useRouter();
+
+  // Hide header on dashboard and admin pages
+  if (pathname === '/dashboard' || pathname === '/admin' || pathname?.startsWith('/admin/')) {
+    return null;
+  }
 
   const navLinks = [
     { href: '/', label: 'Home' },
@@ -19,13 +23,13 @@ export default function Header() {
 
   // Handle Sign Up - navigate to home with signup modal
   const handleSignUp = () => {
-    router.push('/?modal=signup');
+    window.location.href = '/?modal=signup';
     setIsMenuOpen(false);
   };
 
   // Handle Sign In - navigate to home with login modal
   const handleSignIn = () => {
-    router.push('/?modal=login');
+    window.location.href = '/?modal=login';
     setIsMenuOpen(false);
   };
 
