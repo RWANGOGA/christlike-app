@@ -1,6 +1,7 @@
 // frontend/src/app/layout.tsx
 import { Spectral, Inter } from 'next/font/google';
 import './globals.css';
+import Header from '@/components/Header'; // 👈 Added Header import
 
 const spectral = Spectral({
   subsets: ['latin'],
@@ -19,11 +20,11 @@ export const metadata = {
   openGraph: {
     title: 'CHRIST-LIKE | Become More Like Jesus',
     description: 'Read Scripture, track your discipleship journey, and connect with a community of faith.',
-    url: 'https://christlike.app', // Change to your real domain later
+    url: 'https://christlike.app', 
     siteName: 'CHRIST-LIKE',
     images: [
       {
-        url: 'https://images.unsplash.com/photo-1504052434569-70ad5836ab65?auto=format&fit=crop&w=1200&q=80', // Beautiful cross image
+        url: 'https://images.unsplash.com/photo-1504052434569-70ad5836ab65?auto=format&fit=crop&w=1200&q=80', 
         width: 1200,
         height: 630,
         alt: 'CHRIST-LIKE App Preview',
@@ -38,10 +39,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${spectral.variable} ${inter.variable} font-sans`}
+        className={`${spectral.variable} ${inter.variable} font-sans bg-[#F5EFE6]`}
         suppressHydrationWarning
       >
-        {children}
+        {/* 👇 Header is now fixed at the top of every page */}
+        <Header />
+        
+        {/* 👇 Main wrapper with pt-20 (80px) top padding so content isn't hidden behind the fixed header */}
+        <main className="min-h-screen pt-20">
+          {children}
+        </main>
       </body>
     </html>
   );
