@@ -5,12 +5,27 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Menu, X } from 'lucide-react';
 
+// Routes that belong to the authenticated app (not the public marketing site).
+// The Header should never render on these — Sidebar handles navigation there instead.
+const APP_ROUTES = [
+  '/dashboard',
+  '/admin',
+  '/bible',
+  '/devotions',
+  '/sermons',
+  '/facts',
+  '/prayer',
+  '/notes',
+  '/leaderboard',
+  '/settings',
+];
+
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const pathname = usePathname();
 
-  // Hide header on dashboard and admin pages (including all sub-routes)
-  if (pathname?.startsWith('/dashboard') || pathname?.startsWith('/admin')) {
+  // Hide header on any authenticated app route (including sub-routes)
+  if (APP_ROUTES.some((route) => pathname?.startsWith(route))) {
     return null;
   }
 
