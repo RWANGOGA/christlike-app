@@ -13,16 +13,13 @@ export default function Landing() {
 
   // Listen for modal triggers from the global Header (?modal=login or ?modal=register)
   useEffect(() => {
-    // Only run on the client to avoid Next.js build-time errors
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const modal = params.get('modal');
-      
+
       if (modal === 'login' || modal === 'register') {
         setAuthMode(modal === 'login' ? 'login' : 'register');
         setShowAuth(true);
-        
-        // Clean up the URL so it doesn't stay in the browser history
         window.history.replaceState({}, document.title, window.location.pathname);
       }
     }
@@ -30,9 +27,20 @@ export default function Landing() {
 
   useEffect(() => {
     const checkAuth = async () => {
+      // If the user explicitly navigated here from the dashboard (e.g. clicking
+      // "Back to Home" in the Sidebar), skip the auto-redirect and just show
+      // this homepage, even though they're logged in.
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('view') === 'home') {
+          window.history.replaceState({}, document.title, window.location.pathname);
+          setChecking(false);
+          return;
+        }
+      }
+
       try {
         const user = await api.get('/users/me');
-        // Redirect based on user role
         if (user.is_admin) {
           router.replace('/admin');
         } else {

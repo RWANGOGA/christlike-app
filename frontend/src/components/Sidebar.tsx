@@ -18,7 +18,7 @@ export default function Sidebar() {
     { href: '/facts', label: 'Facts for Faith', icon: Lightbulb },
     { href: '/prayer', label: 'Prayer Wall', icon: Heart },
     { href: '/notes', label: 'My Notes', icon: FileText },
-    {href: '/leaderboard',label: 'Leaderboard',icon: Heart},
+    { href: '/leaderboard', label: 'Leaderboard', icon: Heart },
   ];
 
   const handleLogout = () => {
@@ -32,9 +32,12 @@ export default function Sidebar() {
     <>
       {/* Mobile top bar with hamburger toggle */}
       <div className="md:hidden fixed top-0 left-0 right-0 h-14 bg-[#23213A] flex items-center justify-between px-4 z-40">
-        <h1 className="font-[family-name:var(--font-display)] text-lg text-[#FBF7EE] tracking-wide">
+        <Link
+          href="/?view=home"
+          className="font-[family-name:var(--font-display)] text-lg text-[#FBF7EE] tracking-wide"
+        >
           CHRIST-LIKE
-        </h1>
+        </Link>
         <button
           onClick={() => setIsOpen(!isOpen)}
           className="text-[#FBF7EE] p-2"
@@ -59,9 +62,12 @@ export default function Sidebar() {
       >
         {/* Logo (hidden on mobile since top bar already shows it) */}
         <div className="hidden md:block p-6 border-b border-[#FBF7EE]/10">
-          <h1 className="font-[family-name:var(--font-display)] text-xl text-[#FBF7EE] tracking-wide">
+          <Link
+            href="/?view=home"
+            className="font-[family-name:var(--font-display)] text-xl text-[#FBF7EE] tracking-wide hover:text-[#E3A857] transition"
+          >
             CHRIST-LIKE
-          </h1>
+          </Link>
           <p className="text-xs text-[#FBF7EE]/40 mt-1">Discipleship Platform</p>
         </div>
 
@@ -91,8 +97,16 @@ export default function Sidebar() {
           })}
         </nav>
 
-        {/* Footer / Settings & Logout */}
+        {/* Footer / Home, Settings & Logout */}
         <div className="p-4 border-t border-[#FBF7EE]/10 space-y-1">
+          <Link
+            href="/?view=home"
+            onClick={handleNavClick}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-[#FBF7EE]/60 hover:bg-[#FBF7EE]/5 hover:text-[#FBF7EE] transition-colors"
+          >
+            <Home className="w-5 h-5" strokeWidth={1.5} /> Back to Home
+          </Link>
+
           <Link
             href="/settings"
             onClick={handleNavClick}
