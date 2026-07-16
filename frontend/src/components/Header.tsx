@@ -9,8 +9,8 @@ export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const pathname = usePathname();
 
-  // Hide header on dashboard and admin pages
-  if (pathname === '/dashboard' || pathname === '/admin' || pathname?.startsWith('/admin/')) {
+  // Hide header on dashboard and admin pages (including all sub-routes)
+  if (pathname?.startsWith('/dashboard') || pathname?.startsWith('/admin')) {
     return null;
   }
 
@@ -57,7 +57,7 @@ export default function Header() {
                 {link.label}
               </Link>
             ))}
-            
+
             {/* Auth Buttons */}
             <div className="flex items-center gap-4 ml-4 pl-4 border-l border-[#5A4A4A]/10">
               <button
@@ -102,7 +102,7 @@ export default function Header() {
                   {link.label}
                 </Link>
               ))}
-              
+
               {/* Mobile Auth Buttons */}
               <div className="flex flex-col gap-3 pt-4 border-t border-[#5A4A4A]/10">
                 <button

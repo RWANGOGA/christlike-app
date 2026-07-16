@@ -20,11 +20,11 @@ export const metadata = {
   openGraph: {
     title: 'CHRIST-LIKE | Become More Like Jesus',
     description: 'Read Scripture, track your discipleship journey, and connect with a community of faith.',
-    url: 'https://christlike.app', 
+    url: 'https://christlike.app',
     siteName: 'CHRIST-LIKE',
     images: [
       {
-        url: 'https://images.unsplash.com/photo-1504052434569-70ad5836ab65?auto=format&fit=crop&w=1200&q=80', 
+        url: 'https://images.unsplash.com/photo-1504052434569-70ad5836ab65?auto=format&fit=crop&w=1200&q=80',
         width: 1200,
         height: 630,
         alt: 'CHRIST-LIKE App Preview',
@@ -44,10 +44,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       >
         {/* 
           Header is fixed (position: fixed). 
-          It automatically hides itself on /admin and /dashboard routes.
+          It automatically hides itself on /dashboard and /admin routes (and their sub-routes).
         */}
         <Header />
-        
         {/* 
           Render children directly without a global pt-20 wrapper. 
           - Public pages (Home, About, Features) add their own pt-20 or pt-24.

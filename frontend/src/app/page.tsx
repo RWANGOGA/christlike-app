@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { BookOpen, Heart, Users, Sun, Headphones, Video, FileText, MessageCircle } from 'lucide-react';
 import AuthModal from '@/components/AuthModal';
@@ -10,16 +10,23 @@ export default function Landing() {
   const [showAuth, setShowAuth] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   // Listen for modal triggers from the global Header (?modal=login or ?modal=register)
   useEffect(() => {
-    const modal = searchParams.get('modal');
-    if (modal === 'login' || modal === 'register') {
-      setAuthMode(modal === 'login' ? 'login' : 'register');
-      setShowAuth(true);
+    // Only run on the client to avoid Next.js build-time errors
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const modal = params.get('modal');
+      
+      if (modal === 'login' || modal === 'register') {
+        setAuthMode(modal === 'login' ? 'login' : 'register');
+        setShowAuth(true);
+        
+        // Clean up the URL so it doesn't stay in the browser history
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
     }
-  }, [searchParams]);
+  }, []);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -639,15 +646,8 @@ export default function Landing() {
       {showAuth && (
         <AuthModal
           initialMode={authMode}
-          onSuccess={() => {
-            setShowAuth(false);
-            // Clear the URL parameter after successful login
-            window.history.replaceState({}, document.title, window.location.pathname);
-          }}
-          onClose={() => {
-            setShowAuth(false);
-            window.history.replaceState({}, document.title, window.location.pathname);
-          }}
+          onSuccess={() => setShowAuth(false)}
+          onClose={() => setShowAuth(false)}
         />
       )}
     </div>
