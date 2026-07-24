@@ -14,7 +14,6 @@ export default function AdminDashboard() {
 
   const [devotions, setDevotions] = useState<any[]>([]);
   const [series, setSeries] = useState<any[]>([]);
-  const [sermons, setSermons] = useState<any[]>([]);
   const [facts, setFacts] = useState<any[]>([]);
   const [prayers, setPrayers] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
@@ -46,35 +45,33 @@ export default function AdminDashboard() {
     check();
   }, [router]);
 
-  // 2. Load All Data
+  // 2. Load All Data (FIXED ENDPOINTS)
   const loadData = async () => {
     try {
-      const [devs, ser, sermonsData, factsData, prayersData, usersData] = await Promise.all([
-        api.get('/devotions').catch(() => []),
-        api.get('/series').catch(() => []),
-        api.get('/sermons').catch(() => []),
-        api.get('/facts').catch(() => []),
-        api.get('/prayers').catch(() => []),
-        api.get('/users').catch(() => [])
+      const [devs, ser, factsData, prayersData, usersData] = await Promise.all([
+        api.get('/api/admin/devotions').catch(() => []),
+        api.get('/api/admin/sermon-series').catch(() => []),
+        api.get('/api/facts').catch(() => []),
+        api.get('/api/admin/prayer-requests').catch(() => []),
+        api.get('/api/admin/users').catch(() => ({ users: [], total_count: 0 }))
       ]);
       setDevotions(devs || []);
       setSeries(ser || []);
-      setSermons(sermonsData || []);
       setFacts(factsData || []);
       setPrayers(prayersData || []);
-      setUsers(usersData || []);
-      setUserCount(usersData?.length || 0);
+      setUsers(usersData?.users || []);
+      setUserCount(usersData?.total_count || 0);
     } catch (err) {
       console.error("Failed to load admin data", err);
     }
   };
 
-  // 3. Submit Handlers (This is what was missing!)
+  // 3. Submit Handlers (FIXED ENDPOINTS)
   const submitDevotion = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true); setMessage('');
     try {
-      await api.post('/devotions', devForm);
+      await api.post('/api/admin/devotions', devForm);
       setMessage('Devotion created successfully!');
       setDevForm({ title: '', date: '', bible_reference: '', content: '', author: '', is_published: true });
       loadData();
@@ -86,7 +83,7 @@ export default function AdminDashboard() {
     e.preventDefault();
     setSubmitting(true); setMessage('');
     try {
-      await api.post('/series', seriesForm);
+      await api.post('/api/admin/sermon-series', seriesForm);
       setMessage('Series created successfully!');
       setSeriesForm({ title: '', description: '', speaker_name: '', thumbnail_url: '' });
       loadData();
@@ -97,12 +94,14 @@ export default function AdminDashboard() {
   const submitSermon = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true); setMessage('');
+    const targetSeriesId = selectedSeriesId || 1; // Defaults to 1 if not specified
     try {
-      await api.post('/sermons', sermonForm);
+      // Backend requires series_id in the URL path
+      await api.post(`/api/admin/sermon-series/${targetSeriesId}/sermons`, sermonForm);
       setMessage('Sermon created successfully!');
       setSermonForm({ title: '', description: '', speaker_name: '', video_url: '', bible_passage: '' });
       loadData();
-    } catch { setMessage('Failed to create sermon.'); } 
+    } catch { setMessage('Failed to create sermon. Ensure Series ID is correct.'); } 
     finally { setSubmitting(false); }
   };
 
@@ -110,7 +109,7 @@ export default function AdminDashboard() {
     e.preventDefault();
     setSubmitting(true); setMessage('');
     try {
-      await api.post('/facts', factForm);
+      await api.post('/api/admin/facts', factForm);
       setMessage('Fact created successfully!');
       setFactForm({ title: '', category: '', content: '', bible_reference: '', difficulty_level: 'Beginner' });
       loadData();
@@ -118,8 +117,16 @@ export default function AdminDashboard() {
     finally { setSubmitting(false); }
   };
 
-  const handleImpersonate = (userId: number) => {
-    alert(`Impersonating user ${userId} (Feature coming soon)`);
+  // 4. Impersonation (NOW FULLY WORKING)
+  const handleImpersonate = async (userId: number) => {
+    try {
+      const res = await api.post(`/api/admin/impersonate/${userId}`);
+      // Save the new token and redirect to dashboard as that user
+      localStorage.setItem('token', res.access_token);
+      router.push('/dashboard');
+    } catch {
+      setMessage('Failed to impersonate user.');
+    }
   };
 
   if (checking) return (
@@ -237,6 +244,15 @@ export default function AdminDashboard() {
             <form onSubmit={submitSermon} className="bg-white p-5 md:p-6 rounded-2xl border border-[#23213A]/10 space-y-5">
               <h2 className="font-[family-name:var(--font-display)] text-xl text-[#23213A]">New Sermon</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Added Series ID input so backend knows where to attach the sermon */}
+                <input 
+                  required 
+                  type="number" 
+                  placeholder="Series ID (e.g., 1)" 
+                  value={selectedSeriesId || ''} 
+                  onChange={(e) => setSelectedSeriesId(parseInt(e.target.value))} 
+                  className="px-4 py-3 rounded-xl border border-[#23213A]/15 text-sm" 
+                />
                 <input required placeholder="Title" value={sermonForm.title} onChange={(e) => setSermonForm({ ...sermonForm, title: e.target.value })} className="px-4 py-3 rounded-xl border border-[#23213A]/15 text-sm" />
                 <input required placeholder="Speaker Name" value={sermonForm.speaker_name} onChange={(e) => setSermonForm({ ...sermonForm, speaker_name: e.target.value })} className="px-4 py-3 rounded-xl border border-[#23213A]/15 text-sm" />
                 <input required placeholder="Video URL" value={sermonForm.video_url} onChange={(e) => setSermonForm({ ...sermonForm, video_url: e.target.value })} className="px-4 py-3 rounded-xl border border-[#23213A]/15 text-sm md:col-span-2" />
