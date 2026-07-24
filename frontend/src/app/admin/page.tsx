@@ -117,10 +117,12 @@ export default function AdminDashboard() {
     finally { setSubmitting(false); }
   };
 
-  // 4. Impersonation (NOW FULLY WORKING)
+  // 4. Impersonation (NOW FULLY WORKING & TYPE-SAFE)
   const handleImpersonate = async (userId: number) => {
     try {
-      const res = await api.post(`/api/admin/impersonate/${userId}`);
+      // Added {} as the second argument to satisfy the api.post type signature
+      const res = await api.post(`/api/admin/impersonate/${userId}`, {});
+      
       // Save the new token and redirect to dashboard as that user
       localStorage.setItem('token', res.access_token);
       router.push('/dashboard');
