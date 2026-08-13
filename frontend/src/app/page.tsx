@@ -641,14 +641,7 @@ export default function Landing() {
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="relative z-10 border-t border-[#5A4A4A]/10 py-8 mt-auto">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 text-center">
-          <p className="text-sm text-[#5A4A4A]/50">
-            © {new Date().getFullYear()} Christ-Like. Helping believers grow closer to Christ.
-          </p>
-        </div>
-      </footer>
+      
 
       {/* Auth Modal */}
       {showAuth && (

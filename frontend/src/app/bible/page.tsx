@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { BookOpen, Play, Pause, Square, Volume2, Settings2, ChevronDown } from 'lucide-react';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002';
 
 interface Book {
   bookid: string;   // 👈 CHANGED: was number (bolls.life), now string like "GEN" (bible.helloao.org)

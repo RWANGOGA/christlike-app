@@ -8,8 +8,7 @@ services:
       POSTGRES_USER: joapp_user
       POSTGRES_PASSWORD: Jesus1
       POSTGRES_DB: joapp_db
-    ports:
-      - "5434:5432"
+    # REMOVED: ports section to prevent host port conflicts
     volumes:
       - postgres_data:/var/lib/postgresql/data
     # Healthcheck so the backend's condition: service_healthy works
@@ -23,9 +22,12 @@ services:
   backend:
     build: ./backend
     ports:
-      - "8001:8000"   # host 8001 -> container 8000 (container stays on 8000 internally)
+      - "8002:8000"   # host 8001 -> container 8000
     environment:
+      # Points to the internal Docker network name 'db'
       - DATABASE_URL=postgresql://joapp_user:Jesus1@db:5432/joapp_db
+      - SECRET_KEY=your-local-secret-key
+      - ADMIN_EMAILS=akjonan256@gmail.com
     depends_on:
       db:
         condition: service_healthy
@@ -38,11 +40,6 @@ services:
     ports:
       - "3001:3000"
     environment:
-      # Points at the HOST-side port (8001) since the browser calls this directly.
-      # Only use http://backend:8000 instead if fetching from getServerSideProps
-      # or App Router server components (server-side code runs inside the
-      # Docker network, where the backend is reachable as "backend" on its
-      # internal port 8000 — not via the host-mapped 8001).
       - NEXT_PUBLIC_API_URL=http://localhost:8001
     depends_on:
       - backend

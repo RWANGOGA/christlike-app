@@ -4,7 +4,7 @@ import Sidebar from '@/components/Sidebar';
 import { Heart, Send } from 'lucide-react';
 import { api } from '@/lib/api';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002';
 
 export default function PrayerWall() {
   const [prayers, setPrayers] = useState<any[]>([]);

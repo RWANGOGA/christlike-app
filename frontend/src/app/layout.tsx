@@ -2,6 +2,7 @@
 import { Spectral, Inter } from 'next/font/google';
 import './globals.css';
 import Header from '@/components/Header';
+import Footer from '@/components/Footer'; // 👈 Import the new Footer
 
 const spectral = Spectral({
   subsets: ['latin'],
@@ -39,20 +40,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${spectral.variable} ${inter.variable} font-sans bg-[#F5EFE6]`}
+        // 👇 Added flex flex-col min-h-screen so the footer pushes to the bottom
+        className={`${spectral.variable} ${inter.variable} font-sans bg-[#F5EFE6] flex flex-col min-h-screen`}
         suppressHydrationWarning
       >
-        {/* 
-          Header is fixed (position: fixed). 
-          It automatically hides itself on /dashboard and /admin routes (and their sub-routes).
-        */}
+        {/* Header is fixed at the top */}
         <Header />
-        {/* 
-          Render children directly without a global pt-20 wrapper. 
-          - Public pages (Home, About, Features) add their own pt-20 or pt-24.
-          - Admin/Dashboard pages don't have the Header, so they don't need the padding.
-        */}
-        {children}
+        
+        {/* 👇 Main wrapper grows to fill available space */}
+        <main className="flex-grow">
+          {children}
+        </main>
+
+        {/* Footer sits at the bottom */}
+        <Footer />
       </body>
     </html>
   );

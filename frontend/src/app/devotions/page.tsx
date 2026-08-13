@@ -4,7 +4,7 @@ import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
 import { Calendar, BookOpen, X, CheckCircle } from 'lucide-react';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002';
 
 interface Devotion {
   id: number;
