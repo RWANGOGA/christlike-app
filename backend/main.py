@@ -6,10 +6,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func as sql_func
 from models import User, UserNote 
-from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import httpx
+import secrets
 from typing import List
 from database import engine, get_db, Base
 from models import (
@@ -29,6 +29,8 @@ from auth import (
     create_access_token,
     get_current_user,
 )
+# NEW: Import the email utility
+from email_utils import send_password_reset_email
 
 # Create all tables
 Base.metadata.create_all(bind=engine)
@@ -41,7 +43,6 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",  # Your local Next.js frontend
         "http://localhost:3001",
-       
         "https://christlike-app-1.onrender.com",
     ],
     allow_credentials=True,
@@ -139,8 +140,9 @@ def delete_note(note_id: int, current_user: User = Depends(get_current_user), db
     
     db.delete(note)
     db.commit()
-    return {"message": "Note deleted"}# ==================== CURRENT USER ENDPOINTS ====================
+    return {"message": "Note deleted"}
 
+# ==================== CURRENT USER ENDPOINTS ====================
 
 @app.get("/users/me", response_model=UserResponse)
 def read_current_user(current_user: User = Depends(get_current_user)):
@@ -157,9 +159,6 @@ def read_current_user_progress(
     return progress
 
 # ==================== BIBLE API ENDPOINTS ====================
-# Switched from bolls.life to bible.helloao.org (Free Use Bible API):
-# open source, AWS-hosted, no API key, no rate limits.
-# Source: https://github.com/HelloAOLab/bible-api
 BIBLE_TRANSLATION = "BSB"  # Berean Standard Bible - public domain, modern English
 
 @app.get("/api/bible/books")
@@ -170,10 +169,9 @@ async def get_bible_books():
             response = await client.get(f"https://bible.helloao.org/api/{BIBLE_TRANSLATION}/books.json")
             response.raise_for_status()
             data = response.json()
-            # Reshape to match what the frontend already expects: bookid, name, chapters
             books = [
                 {
-                    "bookid": b["id"],  # e.g. "GEN" (string, not numeric like bolls.life)
+                    "bookid": b["id"],
                     "name": b.get("commonName") or b.get("name"),
                     "chapters": b["numberOfChapters"],
                 }
@@ -186,10 +184,7 @@ async def get_bible_books():
 
 @app.get("/api/bible/chapter/{book_id}/{chapter}")
 async def get_bible_chapter(book_id: str, chapter: int):
-    """Fetch all verses for a specific book + chapter from bible.helloao.org.
-    The upstream response mixes headings, line breaks, and verses in one
-    'content' array — this flattens it down to just the verses, in the same
-    {pk, verse, text} shape the frontend already renders."""
+    """Fetch all verses for a specific book + chapter from bible.helloao.org."""
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(
@@ -202,7 +197,7 @@ async def get_bible_chapter(book_id: str, chapter: int):
             verses = []
             for item in content:
                 if item.get("type") != "verse":
-                    continue  # skip headings, line breaks, Hebrew subtitles
+                    continue
 
                 text_parts = []
                 for part in item.get("content", []):
@@ -210,8 +205,6 @@ async def get_bible_chapter(book_id: str, chapter: int):
                         text_parts.append(part)
                     elif isinstance(part, dict) and "text" in part:
                         text_parts.append(part["text"])
-                    # skip footnote references ({"noteId": ...}) and inline
-                    # headings/line breaks — they don't contribute verse text
 
                 verses.append({
                     "pk": f"{book_id}-{chapter}-{item['number']}",
@@ -273,9 +266,7 @@ def get_facts_for_faith(db: Session = Depends(get_db)):
     facts = db.query(FactForFaith).order_by(FactForFaith.order_index).all()
     return facts
 
-
-
-# ==================== USER PROGRESS ENDPOINTS (by ID, unauthenticated) ====================
+# ==================== USER PROGRESS ENDPOINTS ====================
 @app.get("/api/users/{user_id}/progress")
 def get_user_progress(user_id: int, db: Session = Depends(get_db)):
     """Get user's progress across all lessons"""
@@ -326,13 +317,6 @@ def require_admin(current_user: User = Depends(get_current_user)):
 
 @app.post("/admin/bootstrap/{user_id}")
 def bootstrap_admin(user_id: int, secret: str, db: Session = Depends(get_db)):
-    """
-    One-time bootstrap route. Only works if NO admin exists yet in the
-    database — the moment one admin exists, this route always 403s, so the
-    hardcoded/env secret stops being useful as an attack surface after
-    initial setup. From then on, promotions must go through an authenticated
-    admin using /admin/promote-user/{user_id}.
-    """
     if db.query(User).filter(User.is_admin == True).count() > 0:
         raise HTTPException(
             status_code=403,
@@ -350,8 +334,6 @@ def bootstrap_admin(user_id: int, secret: str, db: Session = Depends(get_db)):
 
 @app.post("/admin/promote-user/{user_id}")
 def promote_user(user_id: int, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
-    """Ongoing, production-safe way to promote someone: only an existing
-    admin can call this, no secret required."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
@@ -361,12 +343,10 @@ def promote_user(user_id: int, admin: User = Depends(require_admin), db: Session
 
 @app.get("/admin/users", response_model=List[UserResponse])
 def list_users(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
-    """List all users, so an admin can pick who to promote"""
     return db.query(User).order_by(User.username).all()
 
 @app.get("/api/admin/devotions")
 def list_all_devotions(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
-    """All devotions, including unpublished drafts — admin only"""
     return db.query(Devotion).order_by(Devotion.date.desc()).all()
 
 @app.post("/api/admin/devotions")
@@ -391,7 +371,6 @@ def create_devotion(data: DevotionCreate, admin: User = Depends(require_admin), 
 
 @app.get("/api/admin/sermon-series")
 def list_all_sermon_series(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
-    """All sermon series, including inactive ones — admin only"""
     return db.query(SermonSeries).order_by(SermonSeries.start_date.desc()).all()
 
 @app.post("/api/admin/sermon-series")
@@ -431,15 +410,14 @@ def create_sermon(series_id: int, data: SermonCreate, admin: User = Depends(requ
 @app.get("/")
 def read_root():
     return {"message": "CHRIST-LIKE Backend API is running!", "docs": "/docs"}
+
 # ==================== FACTS FOR FAITH ====================
 @app.get("/api/facts")
 def get_facts(db: Session = Depends(get_db)):
-    """Public endpoint to get all facts"""
     return db.query(FactForFaith).order_by(FactForFaith.order_index).all()
 
 @app.post("/api/admin/facts")
 def create_fact(data: FactCreate, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
-    """Admin endpoint to create a new fact"""
     new_fact = FactForFaith(
         title=data.title,
         category=data.category,
@@ -455,12 +433,10 @@ def create_fact(data: FactCreate, admin: User = Depends(require_admin), db: Sess
 # ==================== PRAYER WALL (SECURE) ====================
 @app.get("/api/prayer-requests")
 def get_active_prayers(db: Session = Depends(get_db)):
-    """Public endpoint to get active (unresolved) prayer requests"""
     return db.query(PrayerRequest).filter(PrayerRequest.is_resolved == False).order_by(PrayerRequest.created_at.desc()).all()
 
 @app.post("/api/prayer-requests")
 def create_prayer(data: PrayerRequestCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Authenticated users can post a prayer request"""
     new_prayer = PrayerRequest(
         user_id=current_user.id,
         content=data.content,
@@ -473,7 +449,6 @@ def create_prayer(data: PrayerRequestCreate, current_user: User = Depends(get_cu
 
 @app.post("/api/prayer-requests/{prayer_id}/pray")
 def pray_for_request(prayer_id: int, db: Session = Depends(get_db)):
-    """Anyone can click 'I prayed' to increment the counter"""
     prayer = db.query(PrayerRequest).filter(PrayerRequest.id == prayer_id).first()
     if not prayer:
         raise HTTPException(status_code=404, detail="Prayer not found")
@@ -484,12 +459,10 @@ def pray_for_request(prayer_id: int, db: Session = Depends(get_db)):
 # ==================== ADMIN PRAYER MODERATION ====================
 @app.get("/api/admin/prayer-requests")
 def get_all_prayers(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
-    """Admin can see all prayers, including resolved ones"""
     return db.query(PrayerRequest).order_by(PrayerRequest.created_at.desc()).all()
 
 @app.patch("/api/admin/prayer-requests/{prayer_id}/resolve")
 def resolve_prayer(prayer_id: int, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
-    """Admin marks a prayer as answered"""
     prayer = db.query(PrayerRequest).filter(PrayerRequest.id == prayer_id).first()
     if not prayer: raise HTTPException(status_code=404, detail="Not found")
     prayer.is_resolved = True
@@ -498,7 +471,6 @@ def resolve_prayer(prayer_id: int, admin: User = Depends(require_admin), db: Ses
 
 @app.delete("/api/admin/prayer-requests/{prayer_id}")
 def delete_prayer(prayer_id: int, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
-    """Admin can delete inappropriate prayers"""
     prayer = db.query(PrayerRequest).filter(PrayerRequest.id == prayer_id).first()
     if not prayer: raise HTTPException(status_code=404, detail="Not found")
     db.delete(prayer)
@@ -507,7 +479,6 @@ def delete_prayer(prayer_id: int, admin: User = Depends(require_admin), db: Sess
 
 @app.get("/api/stats")
 def get_platform_stats(db: Session = Depends(get_db)):
-    """Live counts, so the dashboard reflects real admin-posted content"""
     return {
         "total_lessons": db.query(Lesson).count(),
         "total_categories": db.query(Category).count(),
@@ -522,7 +493,6 @@ def update_user_profile(
     current_user: User = Depends(get_current_user), 
     db: Session = Depends(get_db)
 ):
-    """Update profile, password, or faith stage"""
     if data.email and data.email != current_user.email:
         exists = db.query(User).filter(User.email == data.email).first()
         if exists: raise HTTPException(status_code=400, detail="Email already taken")
@@ -545,7 +515,6 @@ def update_user_profile(
 
 @app.post("/users/me/activity")
 def log_daily_activity(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Called when user reads devotion/bible to update their streak"""
     today = datetime.now().date()
     last_active = current_user.last_active_date.date() if current_user.last_active_date else None
     
@@ -553,9 +522,9 @@ def log_daily_activity(current_user: User = Depends(get_current_user), db: Sessi
         return {"streak": current_user.streak_count, "message": "Already logged today"}
         
     if last_active and (today - last_active).days == 1:
-        current_user.streak_count += 1  # Consecutive day!
+        current_user.streak_count += 1
     else:
-        current_user.streak_count = 1   # Reset streak
+        current_user.streak_count = 1
         
     current_user.last_active_date = datetime.now()
     db.commit()
@@ -564,26 +533,20 @@ def log_daily_activity(current_user: User = Depends(get_current_user), db: Sessi
 # ==================== ADMIN USER MANAGEMENT & IMPERSONATION ====================
 @app.get("/api/admin/users")
 def admin_list_users(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
-    """Admin gets list of all users and total count"""
     users = db.query(User).order_by(User.created_at.desc()).all()
     return {"total_count": len(users), "users": users}
 
 @app.post("/api/admin/impersonate/{user_id}")
 def impersonate_user(user_id: int, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
-    """Admin generates a token to log in AS a specific user"""
     target_user = db.query(User).filter(User.id == user_id).first()
     if not target_user: raise HTTPException(status_code=404, detail="User not found")
     
-    # Generate a JWT for the target user
     token = create_access_token(data={"sub": target_user.email})
     return {"access_token": token, "token_type": "bearer"}
 
 # ==================== CONTENT COMPLETION TRACKING ====================
-
 @app.post("/api/devotions/{devotion_id}/complete")
 def mark_devotion_complete(devotion_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """User marks a devotion as read. Safe to call more than once — the
-    unique constraint on ContentCompletion prevents duplicate rows."""
     devotion = db.query(Devotion).filter(Devotion.id == devotion_id).first()
     if not devotion:
         raise HTTPException(status_code=404, detail="Devotion not found")
@@ -597,12 +560,11 @@ def mark_devotion_complete(devotion_id: int, current_user: User = Depends(get_cu
     try:
         db.commit()
     except IntegrityError:
-        db.rollback()  # already marked complete — no-op
+        db.rollback()
     return {"message": "Marked as read"}
 
 @app.get("/api/devotions/{devotion_id}/stats")
 def get_devotion_stats(devotion_id: int, db: Session = Depends(get_db)):
-    """Public, anonymous count of how many people have completed this devotion"""
     count = db.query(ContentCompletion).filter(
         ContentCompletion.content_type == "devotion",
         ContentCompletion.content_id == devotion_id
@@ -611,7 +573,6 @@ def get_devotion_stats(devotion_id: int, db: Session = Depends(get_db)):
 
 @app.get("/users/me/completed-devotions")
 def get_my_completed_devotions(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Which devotion IDs the current user has completed — used to show checkmarks"""
     rows = db.query(ContentCompletion.content_id).filter(
         ContentCompletion.user_id == current_user.id,
         ContentCompletion.content_type == "devotion"
@@ -619,12 +580,8 @@ def get_my_completed_devotions(current_user: User = Depends(get_current_user), d
     return {"completed_ids": [r[0] for r in rows]}
 
 # ==================== LEADERBOARD (OPT-IN) ====================
-
 @app.get("/api/leaderboard")
 def get_leaderboard(db: Session = Depends(get_db)):
-    """Ranks users who opted in (show_on_leaderboard=True) by total content
-    completions, tie-broken by current streak. Users who haven't opted in
-    never appear here."""
     results = (
         db.query(
             User.username,
@@ -646,3 +603,55 @@ def get_leaderboard(db: Session = Depends(get_db)):
         }
         for r in results
     ]
+
+# ==================== PASSWORD RESET ENDPOINTS ====================
+
+@app.post("/auth/forgot-password")
+async def forgot_password(email: str, db: Session = Depends(get_db)):
+    """Generate a reset token and email it to the user"""
+    user = db.query(User).filter(User.email == email).first()
+    
+    # Security best practice: Always return the same message, even if the email doesn't exist
+    if not user:
+        return {"message": "If an account with that email exists, a reset link has been sent."}
+    
+    # Generate a secure random token and set it to expire in 1 hour
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.utcnow() + timedelta(hours=1)
+    
+    user.reset_token = token
+    user.reset_token_expires = expires_at
+    db.commit()
+    
+    # Send the email
+    try:
+        await send_password_reset_email(user.email, token, user.username)
+    except Exception as e:
+        print(f"Failed to send email: {e}")
+        
+    return {"message": "If an account with that email exists, a reset link has been sent."}
+
+
+@app.post("/auth/reset-password")
+async def reset_password(
+    token: str, 
+    new_password: str, 
+    db: Session = Depends(get_db)
+):
+    """Validate token and update the user's password"""
+    # Find user with this token that hasn't expired yet
+    user = db.query(User).filter(
+        User.reset_token == token,
+        User.reset_token_expires > datetime.utcnow()
+    ).first()
+    
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token.")
+    
+    # Update password and clear the token so it can't be used again
+    user.hashed_password = get_password_hash(new_password)
+    user.reset_token = None
+    user.reset_token_expires = None
+    db.commit()
+    
+    return {"message": "Password successfully reset. You can now log in."}

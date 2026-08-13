@@ -21,8 +21,10 @@ services:
   # 2. FastAPI Backend
   backend:
     build: ./backend
+    env_file:
+      - .env  # 👈 ADDED: This tells Docker to securely read your secret keys from the .env file!
     ports:
-      - "8002:8000"   # host 8001 -> container 8000
+      - "8002:8000"   # host 8002 -> container 8000
     environment:
       # Points to the internal Docker network name 'db'
       - DATABASE_URL=postgresql://joapp_user:Jesus1@db:5432/joapp_db
@@ -40,7 +42,8 @@ services:
     ports:
       - "3001:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8001
+      # 👈 FIXED: Updated to match the backend port 8002
+      - NEXT_PUBLIC_API_URL=http://localhost:8002
     depends_on:
       - backend
     volumes:

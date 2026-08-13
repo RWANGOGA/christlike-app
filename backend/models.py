@@ -19,7 +19,11 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     streak_count = Column(Integer, default=0)
     last_active_date = Column(DateTime(timezone=True), nullable=True)
-    show_on_leaderboard = Column(Boolean, default=False)  # 👈 ADDED: opt-in leaderboard visibility
+    show_on_leaderboard = Column(Boolean, default=False)  # 👈 opt-in leaderboard visibility
+    
+    # NEW: Password Reset Fields
+    reset_token = Column(String(255), nullable=True)
+    reset_token_expires = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships
     progress = relationship("UserProgress", back_populates="user")
@@ -190,7 +194,7 @@ class UserNote(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    title = Column(String(255), default="Untitled Note")  # 👈 ADD THIS LINE
+    title = Column(String(255), default="Untitled Note")
     lesson_id = Column(Integer, ForeignKey("lessons.id"), nullable=True)
     verse_id = Column(Integer, ForeignKey("bible_verses.id"), nullable=True)
     note_text = Column(Text, nullable=False)
@@ -199,7 +203,7 @@ class UserNote(Base):
     
     user = relationship("User", back_populates="notes")
 
-# ==================== CONTENT COMPLETION TRACKING (NEW) ====================
+# ==================== CONTENT COMPLETION TRACKING ====================
 class ContentCompletion(Base):
     """Tracks when a user marks a piece of content (devotion, sermon, fact)
     as read/watched/completed. content_type + content_id lets this cover
