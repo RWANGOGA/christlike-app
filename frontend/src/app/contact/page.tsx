@@ -64,7 +64,7 @@ export default function ContactPage() {
               </a>
             </div>
 
-            {/* Phone Card */}
+            {/* Phone Card - WITH DIRECT CALL BUTTON */}
             <div className="bg-white rounded-3xl shadow-xl p-8 md:p-10 text-center">
               <div className="w-20 h-20 rounded-full bg-[#9CAF88] flex items-center justify-center mx-auto mb-6 shadow-lg">
                 <Phone className="w-10 h-10 text-white" strokeWidth={1.5} />
@@ -72,18 +72,22 @@ export default function ContactPage() {
               <h2 className="font-[family-name:var(--font-display)] text-xl md:text-2xl text-[#5A4A4A] mb-4">
                 Give us a call
               </h2>
-              <p className="text-[#5A4A4A]/70 text-sm md:text-base mb-4 leading-relaxed">
-                If you're considering Christ-Like, we'd love to hear from you.
+              <p className="text-[#5A4A4A]/70 text-sm md:text-base mb-6 leading-relaxed">
+                Tap the button below to call us directly. We're here to help!
               </p>
-              <p className="text-[#5A4A4A] font-semibold text-base md:text-lg">
-                Simply call or WhatsApp us on:
-              </p>
+              
+              {/* Direct Call Button */}
               <a
                 href={`tel:${phoneNumber}`}
-                className="text-[#D4A5A5] hover:text-[#C99595] font-semibold text-lg md:text-xl transition underline underline-offset-2 mt-2 block"
+                className="inline-flex items-center justify-center gap-2 bg-[#D4A5A5] text-white px-8 py-4 rounded-full font-semibold text-lg hover:bg-[#C99595] transition shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
               >
-                {phoneNumber}
+                <Phone className="w-5 h-5" />
+                Call Now
               </a>
+              
+              <p className="mt-4 text-[#5A4A4A]/60 text-sm">
+                Or dial: <span className="font-semibold text-[#5A4A4A]">{phoneNumber}</span>
+              </p>
             </div>
           </div>
         </div>
