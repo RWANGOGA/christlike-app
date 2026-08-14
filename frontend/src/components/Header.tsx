@@ -31,6 +31,7 @@ export default function Header() {
 
   const navLinks = [
     { href: '/', label: 'Home' },
+    { href: '/jesus', label: 'Who is Jesus?' }, // 👈 ADDED NEW LINK HERE
     { href: '/about', label: 'About' },
     { href: '/features', label: 'Features' },
     { href: '/contact', label: 'Contact' },
