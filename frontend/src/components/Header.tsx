@@ -18,6 +18,7 @@ const APP_ROUTES = [
   '/notes',
   '/leaderboard',
   '/settings',
+  '/chat',
 ];
 
 export default function Header() {
@@ -54,7 +55,7 @@ export default function Header() {
       <nav className="max-w-7xl mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
           {/* Logo */}
-          <Link href="/" className="font-[family-name:var(--font-display)] text-2xl text-[#5A4A4A] tracking-wide">
+          <Link href="/" prefetch={false} className="font-[family-name:var(--font-display)] text-2xl text-[#5A4A4A] tracking-wide">
             Christ-Like
           </Link>
 
@@ -64,6 +65,7 @@ export default function Header() {
               <Link
                 key={link.href}
                 href={link.href}
+                prefetch={false}
                 className={`text-sm font-medium transition ${
                   pathname === link.href
                     ? 'text-[#D4A5A5]'
@@ -108,6 +110,7 @@ export default function Header() {
                 <Link
                   key={link.href}
                   href={link.href}
+                  prefetch={false}
                   onClick={() => setIsMenuOpen(false)}
                   className={`text-sm font-medium transition ${
                     pathname === link.href
