@@ -13,8 +13,8 @@ export default function FactsPage() {
   useEffect(() => {
     const fetchFacts = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/facts`);
-        if (res.ok) setFacts(await res.json());
+      const res = await fetch(`${API_URL}/api/facts`);
+      if (res.ok) setFacts((await res.json()).items);
       } catch (err) { console.error(err); } 
       finally { setLoading(false); }
     };

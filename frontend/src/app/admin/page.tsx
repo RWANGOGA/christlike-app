@@ -49,16 +49,16 @@ export default function AdminDashboard() {
   const loadData = async () => {
     try {
       const [devs, ser, factsData, prayersData, usersData] = await Promise.all([
-        api.get('/api/admin/devotions').catch(() => []),
-        api.get('/api/admin/sermon-series').catch(() => []),
-        api.get('/api/facts').catch(() => []),
-        api.get('/api/admin/prayer-requests').catch(() => []),
+        api.get('/api/admin/devotions').catch(() => ({ items: [] })),
+        api.get('/api/admin/sermon-series').catch(() => ({ items: [] })),
+        api.get('/api/facts').catch(() => ({ items: [] })),
+        api.get('/api/admin/prayer-requests').catch(() => ({ items: [] })),
         api.get('/api/admin/users').catch(() => ({ users: [], total_count: 0 }))
       ]);
-      setDevotions(devs || []);
-      setSeries(ser || []);
-      setFacts(factsData || []);
-      setPrayers(prayersData || []);
+      setDevotions(devs?.items || []);
+      setSeries(ser?.items || []);
+      setFacts(factsData?.items || []);
+      setPrayers(prayersData?.items || []);
       setUsers(usersData?.users || []);
       setUserCount(usersData?.total_count || 0);
     } catch (err) {

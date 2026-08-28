@@ -1,23 +1,24 @@
 import os
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
+from config import settings
 
-# Configure Brevo SMTP
-conf = ConnectionConfig(
-    MAIL_USERNAME=os.getenv("MAIL_USERNAME"),
-    MAIL_PASSWORD=os.getenv("MAIL_PASSWORD"),
-    MAIL_FROM=os.getenv("MAIL_FROM"),
-    MAIL_PORT=int(os.getenv("MAIL_PORT", 587)),
-    MAIL_SERVER=os.getenv("MAIL_SERVER"),
-    MAIL_STARTTLS=os.getenv("MAIL_STARTTLS", "true").lower() == "true",  # 👈 Changed from MAIL_TLS
-    MAIL_SSL_TLS=os.getenv("MAIL_SSL_TLS", "false").lower() == "true",   # 👈 Changed from MAIL_SSL
-    USE_CREDENTIALS=True,
-    VALIDATE_CERTS=True,
-)
-
-fm = FastMail(conf)
+def get_mail_config() -> ConnectionConfig:
+    return ConnectionConfig(
+        MAIL_USERNAME=settings.MAIL_USERNAME or "",
+        MAIL_PASSWORD=settings.MAIL_PASSWORD or "",
+        MAIL_FROM=settings.MAIL_FROM or "noreply@example.com",
+        MAIL_PORT=settings.MAIL_PORT,
+        MAIL_SERVER=settings.MAIL_SERVER or "",
+        MAIL_STARTTLS=settings.MAIL_STARTTLS,
+        MAIL_SSL_TLS=settings.MAIL_SSL_TLS,
+        USE_CREDENTIALS=True,
+        VALIDATE_CERTS=True,
+    )
 
 async def send_password_reset_email(email: str, token: str, username: str):
-    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3001")
+    if not settings.MAIL_USERNAME or not settings.MAIL_SERVER:
+        return
+    frontend_url = settings.FRONTEND_URL
     reset_link = f"{frontend_url}/reset-password?token={token}"
     
     html_content = f"""
@@ -47,4 +48,5 @@ async def send_password_reset_email(email: str, token: str, username: str):
         subtype="html"
     )
     
+    fm = FastMail(get_mail_config())
     await fm.send_message(message)

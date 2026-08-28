@@ -13,8 +13,8 @@ export default function SermonsPage() {
   useEffect(() => {
     const fetchSeries = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/sermon-series`);
-        if (res.ok) setSeries(await res.json());
+      const res = await fetch(`${API_URL}/api/sermon-series`);
+      if (res.ok) setSeries((await res.json()).items);
       } catch (err) { 
         console.error("Failed to fetch", err); 
       } finally { 

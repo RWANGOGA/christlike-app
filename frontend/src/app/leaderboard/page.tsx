@@ -22,7 +22,7 @@ export default function LeaderboardPage() {
         // Confirm the user is logged in, same pattern as other pages
         await api.get('/users/me');
         const data = await api.get('/api/leaderboard');
-        setEntries(data);
+        setEntries(data.items);
       } catch (error) {
         router.replace('/');
       } finally {

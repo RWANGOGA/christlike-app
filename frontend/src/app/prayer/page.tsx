@@ -34,7 +34,7 @@ export default function PrayerWall() {
   const fetchPrayers = async () => {
     try {
       const res = await fetch(`${API_URL}/api/prayer-requests`);
-      if (res.ok) setPrayers(await res.json());
+      if (res.ok) setPrayers((await res.json()).items);
     } catch (err) { console.error(err); } 
     finally { setLoading(false); }
   };

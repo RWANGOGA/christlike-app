@@ -2,7 +2,6 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002';
 
 export const api = {
-  // Login and save token
   login: async (email: string, password: string) => {
     const formData = new URLSearchParams();
     formData.append('username', email);
@@ -20,7 +19,6 @@ export const api = {
     return data;
   },
 
-  // Register user
   register: async (email: string, username: string, password: string) => {
     const res = await fetch(`${API_URL}/auth/register`, {
       method: 'POST',
@@ -34,7 +32,6 @@ export const api = {
     return res.json();
   },
 
-  // Fetch authenticated data
   get: async (url: string) => {
     const token = localStorage.getItem('token');
     if (!token) throw new Error('Not authenticated');
@@ -52,7 +49,6 @@ export const api = {
     return res.json();
   },
 
-  // Post authenticated data (Fixed: Added back!)
   post: async (url: string, body: any) => {
     const token = localStorage.getItem('token');
     if (!token) {
@@ -81,13 +77,12 @@ export const api = {
     return res.json();
   },
 
-  // Patch authenticated data (Fixed: Now uses method: 'PATCH')
   patch: async (url: string, body: any) => {
     const token = localStorage.getItem('token');
     if (!token) throw new Error('Not authenticated');
 
     const res = await fetch(`${API_URL}${url}`, {
-      method: 'PATCH', // FIXED: Was incorrectly set to POST
+      method: 'PATCH',
       headers: { 
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -111,4 +106,12 @@ export const api = {
     localStorage.removeItem('token');
     window.location.href = '/';
   }
+};
+
+export type PaginatedResponse<T = any> = {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
 };

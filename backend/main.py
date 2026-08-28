@@ -1,27 +1,36 @@
 # backend/main.py
-from fastapi import FastAPI, HTTPException, Depends, status
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, HTTPException, Depends, status, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.responses import JSONResponse, FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import func as sql_func
-from models import User, UserNote 
-from datetime import datetime, timedelta
+from sqlalchemy import func as sql_func, desc
+from starlette.status import HTTP_404_NOT_FOUND
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 import os
 import httpx
 import secrets
-from typing import List
+import logging
+import uuid
+import time
+from typing import List, Optional
 from database import engine, get_db, Base
 from models import (
     BibleBook, BibleChapter, BibleVerse, 
     Category, Lesson, SermonSeries, Sermon,
     Devotion, FactForFaith, PrayerRequest,
-    User, UserProgress, ContentCompletion
+    User, UserProgress, ContentCompletion,
+    UserNote, UserHighlight
 )
 from schemas import (
     UserCreate, UserLogin, Token, UserResponse,
     DevotionCreate, SermonSeriesCreate, SermonCreate,
-    FactCreate, PrayerRequestCreate, UserUpdate
+    FactCreate, PrayerRequestCreate, UserUpdate,
+    PaginatedResponse, PaginationParams, ProgressUpdate,
+    UserNoteCreate, UserNoteUpdate, ChatMessage
 )
 from auth import (
     verify_password,
@@ -29,25 +38,31 @@ from auth import (
     create_access_token,
     get_current_user,
 )
-# NEW: Import the email utility
 from email_utils import send_password_reset_email
+from config import settings
+from logging_middleware import RequestLoggingMiddleware
+from rate_limit import RateLimitMiddleware
+from chat import manager, translation_service, file_registry, file_lock, UPLOAD_DIR, ALLOWED_EXTENSIONS, active_connections, cleanup_expired_files
 
-# Create all tables
-Base.metadata.create_all(bind=engine)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    import asyncio
+    task = asyncio.create_task(cleanup_expired_files())
+    yield
+    task.cancel()
 
-app = FastAPI(title="JOAPP Clone API")
+app = FastAPI(title="JOAPP Clone API", lifespan=lifespan)
 
-# CORS Middleware
+app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(RateLimitMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # Your local Next.js frontend
-        "http://localhost:3001",
-        "https://christlike-app-1.onrender.com",
-    ],
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all HTTP methods
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+    max_age=600,
 )
 
 # ==================== AUTH ENDPOINTS ====================
@@ -67,7 +82,7 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
         email=user_in.email,
         username=user_in.username,
         hashed_password=get_password_hash(user_in.password),
-        is_admin=user_in.email.lower() in ADMIN_EMAILS,
+        is_admin=user_in.email.lower() in settings.admin_emails_set,
     )
     db.add(new_user)
     db.commit()
@@ -101,14 +116,14 @@ def get_user_notes(current_user: User = Depends(get_current_user), db: Session =
     return notes
 
 @app.post("/api/notes")
-def create_note(data: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def create_note(data: UserNoteCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Create a new note"""
     new_note = UserNote(
         user_id=current_user.id,
-        title=data.get("title", "Untitled Note"),
-        note_text=data.get("note_text", ""),
-        lesson_id=data.get("lesson_id"),
-        verse_id=data.get("verse_id")
+        title=data.title,
+        note_text=data.note_text,
+        lesson_id=data.lesson_id,
+        verse_id=data.verse_id
     )
     db.add(new_note)
     db.commit()
@@ -116,16 +131,16 @@ def create_note(data: dict, current_user: User = Depends(get_current_user), db: 
     return new_note
 
 @app.patch("/api/notes/{note_id}")
-def update_note(note_id: int, data: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def update_note(note_id: int, data: UserNoteUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Update an existing note"""
     note = db.query(UserNote).filter(UserNote.id == note_id, UserNote.user_id == current_user.id).first()
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
     
-    if "title" in data:
-        note.title = data["title"]
-    if "note_text" in data:
-        note.note_text = data["note_text"]
+    if data.title is not None:
+        note.title = data.title
+    if data.note_text is not None:
+        note.note_text = data.note_text
     
     db.commit()
     db.refresh(note)
@@ -153,10 +168,19 @@ def read_current_user(current_user: User = Depends(get_current_user)):
 def read_current_user_progress(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    params: PaginationParams = Depends(),
 ):
     """Get the currently authenticated user's lesson progress"""
-    progress = db.query(UserProgress).filter(UserProgress.user_id == current_user.id).all()
-    return progress
+    query = db.query(UserProgress).filter(UserProgress.user_id == current_user.id)
+    total = query.count()
+    items = query.offset((params.page - 1) * params.page_size).limit(params.page_size).all()
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=params.page,
+        page_size=params.page_size,
+        pages=(total + params.page_size - 1) // params.page_size,
+    )
 
 # ==================== BIBLE API ENDPOINTS ====================
 BIBLE_TRANSLATION = "BSB"  # Berean Standard Bible - public domain, modern English
@@ -221,22 +245,46 @@ async def get_bible_chapter(book_id: str, chapter: int):
 
 # ==================== CONTENT ENDPOINTS ====================
 @app.get("/api/categories")
-def get_categories(db: Session = Depends(get_db)):
+def get_categories(db: Session = Depends(get_db), params: PaginationParams = Depends()):
     """Get all discipleship categories"""
-    categories = db.query(Category).order_by(Category.order_index).all()
-    return categories
+    query = db.query(Category).order_by(Category.order_index)
+    total = query.count()
+    items = query.offset((params.page - 1) * params.page_size).limit(params.page_size).all()
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=params.page,
+        page_size=params.page_size,
+        pages=(total + params.page_size - 1) // params.page_size,
+    )
 
 @app.get("/api/categories/{category_id}/lessons")
-def get_lessons(category_id: int, db: Session = Depends(get_db)):
+def get_lessons(category_id: int, db: Session = Depends(get_db), params: PaginationParams = Depends()):
     """Get all lessons in a category"""
-    lessons = db.query(Lesson).filter(Lesson.category_id == category_id).all()
-    return lessons
+    query = db.query(Lesson).filter(Lesson.category_id == category_id)
+    total = query.count()
+    items = query.offset((params.page - 1) * params.page_size).limit(params.page_size).all()
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=params.page,
+        page_size=params.page_size,
+        pages=(total + params.page_size - 1) // params.page_size,
+    )
 
 @app.get("/api/sermon-series")
-def get_sermon_series(db: Session = Depends(get_db)):
+def get_sermon_series(db: Session = Depends(get_db), params: PaginationParams = Depends()):
     """Get all sermon series"""
-    series = db.query(SermonSeries).filter(SermonSeries.is_active == True).all()
-    return series
+    query = db.query(SermonSeries).filter(SermonSeries.is_active == True)
+    total = query.count()
+    items = query.order_by(SermonSeries.start_date.desc()).offset((params.page - 1) * params.page_size).limit(params.page_size).all()
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=params.page,
+        page_size=params.page_size,
+        pages=(total + params.page_size - 1) // params.page_size,
+    )
 
 @app.get("/api/sermon-series/{series_id}/sermons")
 def get_sermons(series_id: int, db: Session = Depends(get_db)):
@@ -245,10 +293,18 @@ def get_sermons(series_id: int, db: Session = Depends(get_db)):
     return sermons
 
 @app.get("/api/devotions")
-def get_devotions(db: Session = Depends(get_db)):
+def get_devotions(db: Session = Depends(get_db), params: PaginationParams = Depends()):
     """Get published devotions"""
-    devotions = db.query(Devotion).filter(Devotion.is_published == True).all()
-    return devotions
+    query = db.query(Devotion).filter(Devotion.is_published == True)
+    total = query.count()
+    items = query.order_by(Devotion.date.desc()).offset((params.page - 1) * params.page_size).limit(params.page_size).all()
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=params.page,
+        page_size=params.page_size,
+        pages=(total + params.page_size - 1) // params.page_size,
+    )
 
 @app.get("/api/devotions/today")
 def get_today_devotion(db: Session = Depends(get_db)):
@@ -261,10 +317,18 @@ def get_today_devotion(db: Session = Depends(get_db)):
     return devotion
 
 @app.get("/api/facts-for-faith")
-def get_facts_for_faith(db: Session = Depends(get_db)):
+def get_facts_for_faith(db: Session = Depends(get_db), params: PaginationParams = Depends()):
     """Get all facts for faith"""
-    facts = db.query(FactForFaith).order_by(FactForFaith.order_index).all()
-    return facts
+    query = db.query(FactForFaith)
+    total = query.count()
+    items = query.order_by(FactForFaith.order_index).offset((params.page - 1) * params.page_size).limit(params.page_size).all()
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=params.page,
+        page_size=params.page_size,
+        pages=(total + params.page_size - 1) // params.page_size,
+    )
 
 # ==================== USER PROGRESS ENDPOINTS ====================
 @app.get("/api/users/{user_id}/progress")
@@ -274,24 +338,30 @@ def get_user_progress(user_id: int, db: Session = Depends(get_db)):
     return progress
 
 @app.post("/api/users/{user_id}/progress")
-def update_progress(user_id: int, progress_data: dict, db: Session = Depends(get_db)):
+def update_progress(user_id: int, progress_data: ProgressUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Update user progress for a lesson"""
+    if user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
     existing = db.query(UserProgress).filter(
         UserProgress.user_id == user_id,
-        UserProgress.lesson_id == progress_data["lesson_id"]
+        UserProgress.lesson_id == progress_data.lesson_id
     ).first()
     
     if existing:
-        existing.status = progress_data.get("status", existing.status)
-        existing.progress_percentage = progress_data.get("progress_percentage", existing.progress_percentage)
+        existing.status = progress_data.status
+        existing.progress_percentage = progress_data.progress_percentage
+        if progress_data.status == "completed":
+            existing.completed_at = datetime.now(timezone.utc)
         db.commit()
         return existing
     else:
         new_progress = UserProgress(
             user_id=user_id,
-            lesson_id=progress_data["lesson_id"],
-            status=progress_data.get("status", "in_progress"),
-            progress_percentage=progress_data.get("progress_percentage", 0)
+            lesson_id=progress_data.lesson_id,
+            status=progress_data.status,
+            progress_percentage=progress_data.progress_percentage,
+            completed_at=datetime.now(timezone.utc) if progress_data.status == "completed" else None,
         )
         db.add(new_progress)
         db.commit()
@@ -300,14 +370,7 @@ def update_progress(user_id: int, progress_data: dict, db: Session = Depends(get
 
 # ==================== ADMIN LOGIC & CONTENT CREATION ====================
 
-ADMIN_BOOTSTRAP_SECRET = os.environ.get("ADMIN_BOOTSTRAP_SECRET", "JOAPP-MASTER-KEY-2026")
-
-ADMIN_EMAILS_RAW = os.environ.get("ADMIN_EMAILS", "")
-if ADMIN_EMAILS_RAW:
-    ADMIN_EMAILS = {e.strip().lower() for e in ADMIN_EMAILS_RAW.split(",") if e.strip()}
-else:
-    DEFAULT_ADMINS = {"akjonan256@gmail.com"}
-    ADMIN_EMAILS = DEFAULT_ADMINS
+ADMIN_BOOTSTRAP_SECRET = settings.ADMIN_BOOTSTRAP_SECRET
 
 def require_admin(current_user: User = Depends(get_current_user)):
     """Blocks non-admins from accessing admin-only routes"""
@@ -346,8 +409,17 @@ def list_users(admin: User = Depends(require_admin), db: Session = Depends(get_d
     return db.query(User).order_by(User.username).all()
 
 @app.get("/api/admin/devotions")
-def list_all_devotions(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
-    return db.query(Devotion).order_by(Devotion.date.desc()).all()
+def list_all_devotions(admin: User = Depends(require_admin), db: Session = Depends(get_db), params: PaginationParams = Depends()):
+    query = db.query(Devotion)
+    total = query.count()
+    items = query.order_by(Devotion.date.desc()).offset((params.page - 1) * params.page_size).limit(params.page_size).all()
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=params.page,
+        page_size=params.page_size,
+        pages=(total + params.page_size - 1) // params.page_size,
+    )
 
 @app.post("/api/admin/devotions")
 def create_devotion(data: DevotionCreate, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
@@ -370,8 +442,17 @@ def create_devotion(data: DevotionCreate, admin: User = Depends(require_admin), 
     return new_devotion
 
 @app.get("/api/admin/sermon-series")
-def list_all_sermon_series(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
-    return db.query(SermonSeries).order_by(SermonSeries.start_date.desc()).all()
+def list_all_sermon_series(admin: User = Depends(require_admin), db: Session = Depends(get_db), params: PaginationParams = Depends()):
+    query = db.query(SermonSeries)
+    total = query.count()
+    items = query.order_by(SermonSeries.start_date.desc()).offset((params.page - 1) * params.page_size).limit(params.page_size).all()
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=params.page,
+        page_size=params.page_size,
+        pages=(total + params.page_size - 1) // params.page_size,
+    )
 
 @app.post("/api/admin/sermon-series")
 def create_sermon_series(data: SermonSeriesCreate, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
@@ -380,7 +461,7 @@ def create_sermon_series(data: SermonSeriesCreate, admin: User = Depends(require
         description=data.description,
         speaker_name=data.speaker_name,
         thumbnail_url=data.thumbnail_url,
-        start_date=datetime.now()
+        start_date=datetime.now(timezone.utc)
     )
     db.add(new_series)
     db.commit()
@@ -400,7 +481,7 @@ def create_sermon(series_id: int, data: SermonCreate, admin: User = Depends(requ
         speaker_name=data.speaker_name,
         video_url=data.video_url,
         bible_passage=data.bible_passage,
-        sermon_date=datetime.now()
+        sermon_date=datetime.now(timezone.utc)
     )
     db.add(new_sermon)
     db.commit()
@@ -411,10 +492,23 @@ def create_sermon(series_id: int, data: SermonCreate, admin: User = Depends(requ
 def read_root():
     return {"message": "CHRIST-LIKE Backend API is running!", "docs": "/docs"}
 
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+
 # ==================== FACTS FOR FAITH ====================
 @app.get("/api/facts")
-def get_facts(db: Session = Depends(get_db)):
-    return db.query(FactForFaith).order_by(FactForFaith.order_index).all()
+def get_facts(db: Session = Depends(get_db), params: PaginationParams = Depends()):
+    query = db.query(FactForFaith)
+    total = query.count()
+    items = query.order_by(FactForFaith.order_index).offset((params.page - 1) * params.page_size).limit(params.page_size).all()
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=params.page,
+        page_size=params.page_size,
+        pages=(total + params.page_size - 1) // params.page_size,
+    )
 
 @app.post("/api/admin/facts")
 def create_fact(data: FactCreate, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
@@ -432,8 +526,17 @@ def create_fact(data: FactCreate, admin: User = Depends(require_admin), db: Sess
 
 # ==================== PRAYER WALL (SECURE) ====================
 @app.get("/api/prayer-requests")
-def get_active_prayers(db: Session = Depends(get_db)):
-    return db.query(PrayerRequest).filter(PrayerRequest.is_resolved == False).order_by(PrayerRequest.created_at.desc()).all()
+def get_active_prayers(db: Session = Depends(get_db), params: PaginationParams = Depends()):
+    query = db.query(PrayerRequest).filter(PrayerRequest.is_resolved == False)
+    total = query.count()
+    items = query.order_by(PrayerRequest.created_at.desc()).offset((params.page - 1) * params.page_size).limit(params.page_size).all()
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=params.page,
+        page_size=params.page_size,
+        pages=(total + params.page_size - 1) // params.page_size,
+    )
 
 @app.post("/api/prayer-requests")
 def create_prayer(data: PrayerRequestCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -458,8 +561,17 @@ def pray_for_request(prayer_id: int, db: Session = Depends(get_db)):
 
 # ==================== ADMIN PRAYER MODERATION ====================
 @app.get("/api/admin/prayer-requests")
-def get_all_prayers(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
-    return db.query(PrayerRequest).order_by(PrayerRequest.created_at.desc()).all()
+def get_all_prayers(admin: User = Depends(require_admin), db: Session = Depends(get_db), params: PaginationParams = Depends()):
+    query = db.query(PrayerRequest)
+    total = query.count()
+    items = query.order_by(PrayerRequest.created_at.desc()).offset((params.page - 1) * params.page_size).limit(params.page_size).all()
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=params.page,
+        page_size=params.page_size,
+        pages=(total + params.page_size - 1) // params.page_size,
+    )
 
 @app.patch("/api/admin/prayer-requests/{prayer_id}/resolve")
 def resolve_prayer(prayer_id: int, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
@@ -526,15 +638,17 @@ def log_daily_activity(current_user: User = Depends(get_current_user), db: Sessi
     else:
         current_user.streak_count = 1
         
-    current_user.last_active_date = datetime.now()
+    current_user.last_active_date = datetime.now(timezone.utc)
     db.commit()
     return {"streak": current_user.streak_count, "message": "Activity logged!"}
 
 # ==================== ADMIN USER MANAGEMENT & IMPERSONATION ====================
 @app.get("/api/admin/users")
-def admin_list_users(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
-    users = db.query(User).order_by(User.created_at.desc()).all()
-    return {"total_count": len(users), "users": users}
+def admin_list_users(admin: User = Depends(require_admin), db: Session = Depends(get_db), params: PaginationParams = Depends()):
+    query = db.query(User)
+    total = query.count()
+    users = query.order_by(User.created_at.desc()).offset((params.page - 1) * params.page_size).limit(params.page_size).all()
+    return {"total_count": total, "users": users, "page": params.page, "page_size": params.page_size}
 
 @app.post("/api/admin/impersonate/{user_id}")
 def impersonate_user(user_id: int, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
@@ -581,7 +695,7 @@ def get_my_completed_devotions(current_user: User = Depends(get_current_user), d
 
 # ==================== LEADERBOARD (OPT-IN) ====================
 @app.get("/api/leaderboard")
-def get_leaderboard(db: Session = Depends(get_db)):
+def get_leaderboard(db: Session = Depends(get_db), params: PaginationParams = Depends()):
     results = (
         db.query(
             User.username,
@@ -592,10 +706,11 @@ def get_leaderboard(db: Session = Depends(get_db)):
         .filter(User.show_on_leaderboard == True)
         .group_by(User.id)
         .order_by(sql_func.count(ContentCompletion.id).desc(), User.streak_count.desc())
-        .limit(20)
+        .offset((params.page - 1) * params.page_size)
+        .limit(params.page_size)
         .all()
     )
-    return [
+    items = [
         {
             "username": r.username,
             "streak_count": r.streak_count,
@@ -603,6 +718,13 @@ def get_leaderboard(db: Session = Depends(get_db)):
         }
         for r in results
     ]
+    return PaginatedResponse(
+        items=items,
+        total=len(items),
+        page=params.page,
+        page_size=params.page_size,
+        pages=1,
+    )
 
 # ==================== PASSWORD RESET ENDPOINTS ====================
 
@@ -617,7 +739,7 @@ async def forgot_password(email: str, db: Session = Depends(get_db)):
     
     # Generate a secure random token and set it to expire in 1 hour
     token = secrets.token_urlsafe(32)
-    expires_at = datetime.utcnow() + timedelta(hours=1)
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
     
     user.reset_token = token
     user.reset_token_expires = expires_at
@@ -642,7 +764,7 @@ async def reset_password(
     # Find user with this token that hasn't expired yet
     user = db.query(User).filter(
         User.reset_token == token,
-        User.reset_token_expires > datetime.utcnow()
+        User.reset_token_expires > datetime.now(timezone.utc)
     ).first()
     
     if not user:
@@ -655,3 +777,148 @@ async def reset_password(
     db.commit()
     
     return {"message": "Password successfully reset. You can now log in."}
+
+# ==================== CHAT (WHATSAPP-LIKE) ====================
+from jose import JWTError, jwt
+
+@app.websocket("/ws/chat/{user_id}")
+async def websocket_chat(websocket: WebSocket, user_id: int):
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=4001)
+        return
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            await websocket.close(code=4001)
+            return
+    except JWTError:
+        await websocket.close(code=4001)
+        return
+
+    from database import SessionLocal
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == email).first()
+        if not user or user.id != user_id:
+            await websocket.close(code=4003)
+            return
+    finally:
+        db.close()
+
+    language = websocket.query_params.get("language", "en")
+    await manager.connect(user_id, websocket, language)
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            recipient_id = data.get("recipient_id")
+            content = data.get("content", "")
+            content_type = data.get("content_type", "text")
+            file_url = data.get("file_url")
+            file_name = data.get("file_name")
+            file_size = data.get("file_size")
+            reference_content_type = data.get("reference_content_type")
+            reference_content_id = data.get("reference_content_id")
+
+            if not recipient_id:
+                continue
+
+            sender_lang = manager.get_language(user_id)
+            recipient_lang = manager.get_language(recipient_id)
+
+            translated = content
+            if sender_lang and recipient_lang and sender_lang != recipient_lang:
+                translated = await translation_service.translate(content, recipient_lang, sender_lang)
+
+            message = {
+                "type": "chat_message",
+                "sender_id": user_id,
+                "recipient_id": recipient_id,
+                "content": translated,
+                "original_content": content,
+                "source_language": sender_lang,
+                "target_language": recipient_lang,
+                "content_type": content_type,
+                "file_url": file_url,
+                "file_name": file_name,
+                "file_size": file_size,
+                "reference_content_type": reference_content_type,
+                "reference_content_id": reference_content_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+            if manager.is_online(recipient_id):
+                await manager.send_to_user(recipient_id, message)
+            await manager.send_to_user(user_id, message)
+
+            if content_type not in ("text", "file", "image", "video", "reference"):
+                continue
+
+            await manager.broadcast(message, exclude=user_id)
+    except WebSocketDisconnect:
+        await manager.disconnect(user_id)
+
+@app.post("/api/chat/upload")
+async def upload_chat_file(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    filename = file.filename or "upload"
+    ext = Path(filename).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="File type not allowed")
+
+    content = await file.read()
+    if len(content) > settings.CHAT_MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File too large")
+
+    file_id = f"{uuid.uuid4().hex}{ext}"
+    file_path = UPLOAD_DIR / file_id
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    async with file_lock:
+        file_registry[file_id] = {
+            "owner_id": current_user.id,
+            "filename": filename,
+            "size": len(content),
+            "content_type": file.content_type or "application/octet-stream",
+            "created_at": time.time(),
+        }
+
+    return {
+        "file_id": file_id,
+        "file_url": f"/api/chat/files/{file_id}",
+        "filename": filename,
+        "size": len(content),
+        "content_type": file.content_type,
+    }
+
+@app.get("/api/chat/files/{file_id}")
+async def download_chat_file(file_id: str, current_user: User = Depends(get_current_user)):
+    async with file_lock:
+        meta = file_registry.get(file_id)
+
+    if not meta:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="File not found or expired")
+
+    file_path = UPLOAD_DIR / file_id
+    if not file_path.exists():
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="File not found on disk")
+
+    return FileResponse(
+        path=str(file_path),
+        filename=meta["filename"],
+        media_type=meta["content_type"],
+        headers={"Content-Disposition": f'attachment; filename="{meta["filename"]}"'},
+    )
+
+@app.get("/api/chat/online")
+async def get_online_users(current_user: User = Depends(get_current_user)):
+    online = [
+        {"user_id": uid, "language": manager.get_language(uid)}
+        for uid in active_connections.keys()
+    ]
+    return {"online": online}

@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
-import { Home, BookOpen, Sun, Mic, Lightbulb, Heart, LogOut, Settings, FileText, Menu, X } from 'lucide-react';
+import { Home, BookOpen, Sun, Mic, Lightbulb, Heart, LogOut, Settings, FileText, Menu, X, MessageCircle } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 
@@ -19,6 +19,7 @@ export default function Sidebar() {
     { href: '/prayer', label: 'Prayer Wall', icon: Heart },
     { href: '/notes', label: 'My Notes', icon: FileText },
     { href: '/leaderboard', label: 'Leaderboard', icon: Heart },
+    { href: '/chat', label: 'Community Chat', icon: MessageCircle },
   ];
 
   const handleLogout = () => {

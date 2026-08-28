@@ -18,7 +18,7 @@ export default function Dashboard() {
         const userData = await api.get('/users/me');
         setUser(userData);
         const progressData = await api.get('/users/me/progress');
-        setProgress(progressData);
+        setProgress(progressData.items);
         const statsData = await api.get('/api/stats');
         setStats(statsData);
 

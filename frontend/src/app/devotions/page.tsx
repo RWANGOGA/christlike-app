@@ -34,7 +34,7 @@ export default function DevotionsPage() {
         if (todayRes.ok) setTodayDevotion(await todayRes.json());
 
         const allRes = await fetch(`${API_URL}/api/devotions`);
-        if (allRes.ok) setAllDevotions(await allRes.json());
+        if (allRes.ok) setAllDevotions((await allRes.json()).items);
 
         // NEW: load which devotions this user already completed (if logged in)
         try {
