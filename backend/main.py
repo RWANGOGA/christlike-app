@@ -822,24 +822,19 @@ async def websocket_chat(websocket: WebSocket, user_id: int):
             reference_content_type = data.get("reference_content_type")
             reference_content_id = data.get("reference_content_id")
 
-            if not recipient_id:
+            if not content and content_type == "text":
                 continue
 
             sender_lang = manager.get_language(user_id)
-            recipient_lang = manager.get_language(recipient_id)
-
-            translated = content
-            if sender_lang and recipient_lang and sender_lang != recipient_lang:
-                translated = await translation_service.translate(content, recipient_lang, sender_lang)
 
             message = {
                 "type": "chat_message",
                 "sender_id": user_id,
                 "recipient_id": recipient_id,
-                "content": translated,
+                "content": content,
                 "original_content": content,
                 "source_language": sender_lang,
-                "target_language": recipient_lang,
+                "target_language": sender_lang,
                 "content_type": content_type,
                 "file_url": file_url,
                 "file_name": file_name,
@@ -849,14 +844,17 @@ async def websocket_chat(websocket: WebSocket, user_id: int):
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
-            if manager.is_online(recipient_id):
-                await manager.send_to_user(recipient_id, message)
-            await manager.send_to_user(user_id, message)
-
             if content_type not in ("text", "file", "image", "video", "reference"):
                 continue
 
-            await manager.broadcast(message, exclude=user_id)
+            for uid in list(active_connections.keys()):
+                recipient_lang = manager.get_language(uid)
+                if recipient_lang and sender_lang and recipient_lang != sender_lang:
+                    message["content"] = await translation_service.translate(content, recipient_lang, sender_lang)
+                else:
+                    message["content"] = content
+                message["target_language"] = recipient_lang
+                await manager.send_to_user(uid, message)
     except WebSocketDisconnect:
         await manager.disconnect(user_id)
 
