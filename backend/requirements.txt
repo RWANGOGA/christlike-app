@@ -5,7 +5,7 @@ psycopg[binary]>=3.2
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.9
-email-validator==2.1.1
+email-validator>=2.3.0
 sqlalchemy==2.0.35
 fastapi-mail==1.6.5
 alembic==1.19.1
