@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
-import { MessageCircle, Send, Paperclip, Globe, Users, X, Download, FileText, Video, Image as ImageIcon } from 'lucide-react';
+import { MessageCircle, Send, Paperclip, Globe, Users, X, Download, FileText, Video, Image as ImageIcon, ArrowLeft } from 'lucide-react';
 
 interface Message {
   id: string;
@@ -50,6 +50,7 @@ export default function ChatPage() {
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [connected, setConnected] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [showOnline, setShowOnline] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -209,8 +210,8 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-[calc(100vh-80px)] bg-[#FBF7EE]">
-      {/* Online Users Sidebar */}
-      <div className="w-64 bg-white border-r border-[#23213A]/10 flex flex-col">
+      {/* Desktop sidebar */}
+      <div className="hidden md:flex w-64 bg-white border-r border-[#23213A]/10 flex-col">
         <div className="p-4 border-b border-[#23213A]/10">
           <h2 className="font-[family-name:var(--font-display)] text-lg text-[#23213A] flex items-center gap-2">
             <Users className="w-5 h-5" />
@@ -222,7 +223,7 @@ export default function ChatPage() {
           {onlineUsers.map((u) => (
             <button
               key={u.user_id}
-              onClick={() => setSelectedUser(u.user_id)}
+              onClick={() => { setSelectedUser(u.user_id); setShowOnline(false); }}
               className={`w-full text-left px-4 py-3 hover:bg-[#FBF7EE] transition border-b border-[#23213A]/5 ${
                 selectedUser === u.user_id ? 'bg-[#E3A857]/10' : ''
               }`}
@@ -238,7 +239,7 @@ export default function ChatPage() {
       </div>
 
       {/* Chat Area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         {!selectedUser ? (
           <div className="flex-1 flex items-center justify-center text-[#23213A]/40">
             <div className="text-center">
@@ -249,9 +250,15 @@ export default function ChatPage() {
         ) : (
           <>
             {/* Chat Header */}
-            <div className="bg-white border-b border-[#23213A]/10 px-6 py-4 flex items-center justify-between">
-              <div>
-                <h3 className="font-[family-name:var(--font-display)] text-lg text-[#23213A]">
+            <div className="bg-white border-b border-[#23213A]/10 px-4 py-3 flex items-center gap-3">
+              <button
+                onClick={() => { setSelectedUser(null); setShowOnline(true); }}
+                className="md:hidden p-2 rounded-lg hover:bg-[#F5EFE6] transition"
+              >
+                <ArrowLeft className="w-5 h-5 text-[#5A4A4A]" />
+              </button>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-[family-name:var(--font-display)] text-base md:text-lg text-[#23213A] truncate">
                   Chat with User #{selectedUser}
                 </h3>
                 <p className="text-xs text-[#23213A]/50">
@@ -259,22 +266,22 @@ export default function ChatPage() {
                 </p>
               </div>
               <button
-                onClick={() => setSelectedUser(null)}
-                className="p-2 rounded-lg hover:bg-[#F5EFE6] transition"
+                onClick={() => { setSelectedUser(null); setShowOnline(true); }}
+                className="hidden md:block p-2 rounded-lg hover:bg-[#F5EFE6] transition"
               >
                 <X className="w-5 h-5 text-[#5A4A4A]" />
               </button>
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-3">
               {selectedMessages.map((msg) => (
                 <div
                   key={msg.id}
                   className={`flex ${msg.isMine ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-[70%] rounded-2xl px-4 py-3 ${
+                    className={`max-w-[85%] md:max-w-[70%] rounded-2xl px-3 py-2.5 ${
                       msg.isMine
                         ? 'bg-[#23213A] text-[#FBF7EE]'
                         : 'bg-white border border-[#23213A]/10 text-[#23213A]'
@@ -296,15 +303,15 @@ export default function ChatPage() {
                       </div>
                     )}
                     {msg.content && (
-                      <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                      <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
                     )}
                     {msg.original_content && msg.original_content !== msg.content && (
                       <p className="text-xs opacity-50 mt-1 italic">
                         Original: {msg.original_content}
                       </p>
                     )}
-                    <p className={`text-xs mt-2 ${msg.isMine ? 'text-[#FBF7EE]/50' : 'text-[#23213A]/40'}`}>
-                      {new Date(msg.timestamp).toLocaleTimeString()}
+                    <p className={`text-xs mt-1.5 ${msg.isMine ? 'text-[#FBF7EE]/50' : 'text-[#23213A]/40'}`}>
+                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </p>
                   </div>
                 </div>
@@ -312,8 +319,8 @@ export default function ChatPage() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input Area */}
-            <div className="bg-white border-t border-[#23213A]/10 p-4">
+            {/* Input Area - Fixed at bottom on mobile */}
+            <div className="bg-white border-t border-[#23213A]/10 p-3 md:p-4">
               <div className="flex items-end gap-2">
                 <input
                   ref={fileInputRef}
@@ -325,7 +332,7 @@ export default function ChatPage() {
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploading}
-                  className="p-3 rounded-full bg-[#F5EFE6] text-[#5A4A4A] hover:bg-[#E3A857]/10 transition disabled:opacity-50"
+                  className="p-2.5 md:p-3 rounded-full bg-[#F5EFE6] text-[#5A4A4A] hover:bg-[#E3A857]/10 transition disabled:opacity-50 flex-shrink-0"
                 >
                   <Paperclip className="w-5 h-5" />
                 </button>
@@ -333,14 +340,14 @@ export default function ChatPage() {
                   type="text"
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+                  onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), sendMessage())}
                   placeholder="Type a message..."
-                  className="flex-1 px-4 py-3 rounded-full border border-[#23213A]/15 text-sm focus:outline-none focus:border-[#D4A5A5] focus:ring-1 focus:ring-[#D4A5A5]"
+                  className="flex-1 px-4 py-3 rounded-full border border-[#23213A]/15 text-sm focus:outline-none focus:border-[#D4A5A5] focus:ring-1 focus:ring-[#D4A5A5] min-w-0"
                 />
                 <button
                   onClick={sendMessage}
                   disabled={!newMessage.trim()}
-                  className="p-3 rounded-full bg-[#D4A5A5] text-white hover:bg-[#C99595] transition disabled:opacity-50"
+                  className="p-2.5 md:p-3 rounded-full bg-[#D4A5A5] text-white hover:bg-[#C99595] transition disabled:opacity-50 flex-shrink-0"
                 >
                   <Send className="w-5 h-5" />
                 </button>
@@ -349,6 +356,43 @@ export default function ChatPage() {
           </>
         )}
       </div>
+
+      {/* Mobile Online Users Overlay */}
+      {showOnline && selectedUser && (
+        <div className="md:hidden fixed inset-0 z-50 bg-[#FBF7EE]">
+          <div className="flex flex-col h-full">
+            <div className="bg-white border-b border-[#23213A]/10 px-4 py-3 flex items-center justify-between">
+              <div>
+                <h2 className="font-[family-name:var(--font-display)] text-lg text-[#23213A]">Online Users</h2>
+                <p className="text-xs text-[#23213A]/50">{onlineUsers.length} users online</p>
+              </div>
+              <button
+                onClick={() => setShowOnline(false)}
+                className="p-2 rounded-lg hover:bg-[#F5EFE6] transition"
+              >
+                <X className="w-5 h-5 text-[#5A4A4A]" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {onlineUsers.map((u) => (
+                <button
+                  key={u.user_id}
+                  onClick={() => { setSelectedUser(u.user_id); setShowOnline(false); }}
+                  className={`w-full text-left px-4 py-3 hover:bg-[#FBF7EE] transition border-b border-[#23213A]/5 ${
+                    selectedUser === u.user_id ? 'bg-[#E3A857]/10' : ''
+                  }`}
+                >
+                  <p className="text-sm font-medium text-[#23213A]">User #{u.user_id}</p>
+                  <p className="text-xs text-[#23213A]/50 flex items-center gap-1">
+                    <Globe className="w-3 h-3" />
+                    {u.language}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
