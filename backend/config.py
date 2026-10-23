@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     RATE_LIMIT_LOGIN: str = "5/minute"
     RATE_LIMIT_REGISTER: str = "3/minute"
     RATE_LIMIT_API: str = "100/minute"
+    RATE_LIMIT_CHAT_UPLOAD: str = "20/minute"
+    RATE_LIMIT_WS_MESSAGE: str = "30/minute"
 
     MAIL_USERNAME: str = ""
     MAIL_PASSWORD: str = ""
@@ -31,9 +33,10 @@ class Settings(BaseSettings):
 
     CHAT_UPLOAD_DIR: str = "/tmp/chat_uploads"
     CHAT_MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB
-    CHAT_TTL_SECONDS: int = 300  # 5 minutes
-
-    TRANSLATION_API_URL: str = ""
+    CHAT_TTL_SECONDS: int = 30 * 24 * 3600  # keep uploaded files 30 days
+    CHAT_CLEANUP_INTERVAL_SECONDS: int = 3600  # sweep expired files hourly
+    CHAT_MAX_MESSAGE_LENGTH: int = 4000
+    CHAT_HISTORY_LIMIT: int = 100
 
     @property
     def cors_origins_list(self) -> List[str]:

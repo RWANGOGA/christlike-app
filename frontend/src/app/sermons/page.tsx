@@ -28,7 +28,7 @@ export default function SermonsPage() {
     <div className="flex bg-[#FBF7EE] min-h-screen">
       <Sidebar />
       
-      <div className="flex-1 ml-0 lg:ml-64 p-4 md:p-6 lg:p-8 max-w-6xl mx-auto w-full">
+      <div className="flex-1 min-w-0 ml-0 md:ml-64 p-4 pt-20 md:p-6 md:pt-6 lg:p-8 max-w-6xl mx-auto w-full">
         <header className="mb-6 md:mb-8">
           <h1 className="font-[family-name:var(--font-display)] text-2xl md:text-3xl text-[#23213A]">Sermon Series</h1>
           <p className="text-[#23213A]/50 mt-1 text-sm md:text-base">Listen and grow through powerful messages.</p>

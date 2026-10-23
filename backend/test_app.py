@@ -3,8 +3,11 @@ import os
 import sys
 import time
 import asyncio
-from datetime import datetime
+import uuid
+import threading
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch, AsyncMock
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -14,7 +17,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from database import Base, get_db
 from main import app
-from models import User, Devotion, Category
+import main as main_module
+from chat import UPLOAD_DIR, active_connections, cleanup_expired_files
+from models import User, Devotion, Category, ChatFile
 from config import settings
 from auth import get_password_hash
 from rate_limit import rate_limiter
@@ -38,8 +43,18 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def setup_db():
     Base.metadata.create_all(bind=engine)
+    # A previously interrupted run can leave rows behind (file-based SQLite
+    # survives the process), which shows up as UNIQUE failures.
+    db = TestingSessionLocal()
+    for table in reversed(Base.metadata.sorted_tables):
+        db.execute(table.delete())
+    db.commit()
+    db.close()
     rate_limiter._store.clear()
-    yield
+    # The async chat routes open sessions directly (no Depends), so point
+    # them at the test engine as well.
+    with patch.object(main_module, "db_session", TestingSessionLocal):
+        yield
     Base.metadata.drop_all(bind=engine)
     rate_limiter._store.clear()
 
@@ -214,3 +229,179 @@ def test_chat_online_users():
     assert resp.status_code == 200
     data = resp.json()
     assert "online" in data
+
+
+# ==================== CHAT: PERSISTENCE / WEBSOCKET ====================
+def _make_user(email: str, username: str):
+    """Create a user and return (id, auth headers)."""
+    db = TestingSessionLocal()
+    db.add(User(email=email, username=username, hashed_password=get_password_hash("password123")))
+    db.commit()
+    db.close()
+
+    token_resp = client.post("/auth/login", data={
+        "username": email,
+        "password": "password123"
+    }, headers={"Content-Type": "application/x-www-form-urlencoded"})
+    return token_resp.json()["access_token"]
+
+def _drain_until(sock, predicate, limit=10, timeout=10.0):
+    """Read frames until one matches, skipping the 'system' notice sent on
+    connect. Runs the blocking receive in a daemon thread with a timeout so a
+    dropped frame fails the test in seconds instead of hanging the suite."""
+    import queue
+
+    for _ in range(limit):
+        results: "queue.Queue" = queue.Queue(maxsize=1)
+
+        def _receive():
+            try:
+                results.put(("ok", sock.receive_json()))
+            except BaseException as exc:  # socket closed / protocol error
+                results.put(("error", exc))
+
+        threading.Thread(target=_receive, daemon=True).start()
+        try:
+            status, frame = results.get(timeout=timeout)
+        except queue.Empty:
+            raise AssertionError("timed out waiting for a websocket frame")
+        if status == "error":
+            raise frame
+        if predicate(frame):
+            return frame
+    raise AssertionError("no matching frame received")
+
+def test_chat_upload_rejects_empty_file():
+    token = _make_user("empty@example.com", "emptyuser")
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = client.post(
+        "/api/chat/upload",
+        files={"file": ("empty.txt", b"", "text/plain")},
+        headers=headers,
+    )
+    assert resp.status_code == 400
+    assert "empty" in resp.json()["detail"].lower()
+
+def test_chat_history_requires_auth():
+    assert client.get("/api/chat/history").status_code in (401, 403)
+
+def test_chat_websocket_rejects_impersonation():
+    """A valid token for user A must not open a socket as user B."""
+    token = _make_user("imp1@example.com", "imp1")
+    with pytest.raises(Exception):
+        with client.websocket_connect(f"/ws/chat/999999?token={token}"):
+            pass
+
+def test_chat_websocket_receives_own_message_once():
+    token = _make_user("wsdedupe@example.com", "wsdedupe")
+    db = TestingSessionLocal()
+    uid = db.query(User).filter(User.email == "wsdedupe@example.com").first().id
+    db.close()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    with client.websocket_connect(f"/ws/chat/{uid}?token={token}") as sock:
+        sock.send_json({"content": "hello world"})
+        frame = _drain_until(sock, lambda f: f.get("type") == "chat_message")
+
+    assert frame["content"] == "hello world"
+    assert frame["content_type"] == "text"
+    assert frame["sender_id"] == uid
+    assert frame["sender_name"] == "wsdedupe"
+    assert frame["id"]
+
+    history = client.get("/api/chat/history", headers=headers).json()["messages"]
+    assert [m["id"] for m in history] == [frame["id"]]
+
+def test_chat_websocket_rejects_bad_types_and_empty_then_survives():
+    token = _make_user("wsvalid@example.com", "wsvalid")
+    db = TestingSessionLocal()
+    uid = db.query(User).filter(User.email == "wsvalid@example.com").first().id
+    db.close()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    with client.websocket_connect(f"/ws/chat/{uid}?token={token}") as sock:
+        # Wrong type for `content` -> rejected, socket stays open.
+        sock.send_json({"content": 12345})
+        err = _drain_until(sock, lambda f: f.get("type") == "error")
+        assert err["code"] == "invalid_payload"
+
+        # Empty text and unknown extra keys are dropped without a reply.
+        sock.send_json({"content": "   "})
+        sock.send_json({"nonsense": True})
+        sock.send_json({"content": "still alive"})
+        frame = _drain_until(sock, lambda f: f.get("type") == "chat_message")
+        assert frame["content"] == "still alive"
+
+    history = client.get("/api/chat/history", headers=headers).json()["messages"]
+    assert [m["content"] for m in history] == ["still alive"]
+
+def test_chat_file_message_carries_real_mime_type():
+    token = _make_user("wsfile@example.com", "wsfile")
+    db = TestingSessionLocal()
+    uid = db.query(User).filter(User.email == "wsfile@example.com").first().id
+    db.close()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    upload = client.post(
+        "/api/chat/upload",
+        files={"file": ("note.txt", b"persist me", "text/plain")},
+        headers=headers,
+    )
+    assert upload.status_code == 200
+    file_id = upload.json()["file_id"]
+
+    with client.websocket_connect(f"/ws/chat/{uid}?token={token}") as sock:
+        sock.send_json({"content": "", "file_id": file_id})
+        frame = _drain_until(sock, lambda f: f.get("type") == "chat_message")
+
+    assert frame["content_type"] == "file"
+    assert frame["file_name"] == "note.txt"
+    assert frame["file_content_type"] == "text/plain"
+    assert frame["file_size"] == len(b"persist me")
+
+    # Unknown file ids must not create a message with a dangling FK.
+    with client.websocket_connect(f"/ws/chat/{uid}?token={token}") as sock:
+        sock.send_json({"file_id": "does-not-exist.txt"})
+        err = _drain_until(sock, lambda f: f.get("type") == "error")
+        assert err["code"] == "file_unavailable"
+
+def test_chat_expired_file_rejected_on_download_and_send():
+    token = _make_user("expired@example.com", "expireduser")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    upload = client.post(
+        "/api/chat/upload",
+        files={"file": ("old.txt", b"perished", "text/plain")},
+        headers=headers,
+    )
+    file_id = upload.json()["file_id"]
+
+    db = TestingSessionLocal()
+    record = db.query(ChatFile).filter(ChatFile.file_id == file_id).first()
+    # Stored exactly as the upload path stores it: aware UTC -> naive UTC on SQLite.
+    record.expires_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=5)
+    db.commit()
+    db.close()
+
+    assert client.get(f"/api/chat/files/{file_id}", headers=headers).status_code == 404
+
+    stop = asyncio.Event()
+    stop.set()  # single pass, then return
+    asyncio.run(cleanup_expired_files(TestingSessionLocal, stop))
+
+    assert not (UPLOAD_DIR / file_id).exists()
+    assert file_id not in [f.file_id for f in TestingSessionLocal().query(ChatFile).all()]
+
+def test_chat_socket_exception_does_not_leave_ghost_online_entry():
+    token = _make_user("ghost@example.com", "ghostuser")
+    db = TestingSessionLocal()
+    uid = db.query(User).filter(User.email == "ghost@example.com").first().id
+    db.close()
+
+    with client.websocket_connect(f"/ws/chat/{uid}?token={token}") as sock:
+        assert uid in active_connections
+        sock.send_json({"content": "raw bytes", "file_id": 12345})
+
+    # Client disconnected -> the handler's finally block must clean up.
+    assert uid not in active_connections
+    assert client.get("/api/chat/online", headers={"Authorization": f"Bearer {token}"}).json()["online"] == []

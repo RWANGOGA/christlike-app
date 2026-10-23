@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_serializer
+from pydantic import BaseModel, EmailStr, field_serializer, field_validator
 from typing import Optional, List, Any
 
 class UserCreate(BaseModel):
@@ -99,12 +99,13 @@ class ProgressUpdate(BaseModel):
     status: str = "in_progress"
     progress_percentage: int = 0
 
-class ChatMessage(BaseModel):
-    recipient_id: int
-    content: str
-    content_type: str = "text"
-    file_url: Optional[str] = None
-    file_name: Optional[str] = None
-    file_size: Optional[int] = None
-    reference_content_type: Optional[str] = None
-    reference_content_id: Optional[int] = None
+class ChatMessageIn(BaseModel):
+    """Inbound websocket payload. `content_type` is assigned by the server
+    (text vs file), so clients only send content or a file_id."""
+    content: Optional[str] = ""
+    file_id: Optional[str] = None
+
+    @field_validator("content")
+    @classmethod
+    def strip_content(cls, v: Optional[str]) -> str:
+        return (v or "").strip()

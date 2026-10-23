@@ -6,7 +6,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.responses import JSONResponse, FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import func as sql_func, desc
+from sqlalchemy import func as sql_func, desc, inspect as sa_inspect
 from starlette.status import HTTP_404_NOT_FOUND
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -15,22 +15,22 @@ import httpx
 import secrets
 import logging
 import uuid
-import time
-from typing import List, Optional
-from database import engine, get_db, Base
+from typing import List, Optional, Dict
+from sqlalchemy.orm import joinedload, selectinload, object_session
+from database import engine, get_db, Base, SessionLocal
 from models import (
     BibleBook, BibleChapter, BibleVerse, 
     Category, Lesson, SermonSeries, Sermon,
     Devotion, FactForFaith, PrayerRequest,
     User, UserProgress, ContentCompletion,
-    UserNote, UserHighlight
+    UserNote, UserHighlight, ChatMessage as ChatMessageModel, ChatFile
 )
 from schemas import (
     UserCreate, UserLogin, Token, UserResponse,
     DevotionCreate, SermonSeriesCreate, SermonCreate,
     FactCreate, PrayerRequestCreate, UserUpdate,
     PaginatedResponse, PaginationParams, ProgressUpdate,
-    UserNoteCreate, UserNoteUpdate, ChatMessage
+    UserNoteCreate, UserNoteUpdate, ChatMessageIn
 )
 from auth import (
     verify_password,
@@ -41,15 +41,32 @@ from auth import (
 from email_utils import send_password_reset_email
 from config import settings
 from logging_middleware import RequestLoggingMiddleware
-from rate_limit import RateLimitMiddleware
-from chat import manager, translation_service, file_registry, file_lock, UPLOAD_DIR, ALLOWED_EXTENSIONS, active_connections, cleanup_expired_files
+from rate_limit import RateLimitMiddleware, rate_limiter, parse_rate
+from chat import manager, UPLOAD_DIR, ALLOWED_EXTENSIONS, active_connections, cleanup_expired_files, is_expired
+
+logger = logging.getLogger("christlike.api")
+
+# Chat routes are written in async style, so they cannot use the sync
+# `Depends(get_db)` generator for the *websocket* handler. They go through
+# this indirection instead, which lets tests redirect them to the SQLite
+# session (dependency_overrides only affect `Depends`, not direct calls).
+def db_session() -> Session:
+    return SessionLocal()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import asyncio
-    task = asyncio.create_task(cleanup_expired_files())
-    yield
-    task.cancel()
+    stop_event = asyncio.Event()
+    task = asyncio.create_task(cleanup_expired_files(db_session, stop_event))
+    try:
+        yield
+    finally:
+        stop_event.set()
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 app = FastAPI(title="JOAPP Clone API", lifespan=lifespan)
 
@@ -778,8 +795,43 @@ async def reset_password(
     
     return {"message": "Password successfully reset. You can now log in."}
 
-# ==================== CHAT (WHATSAPP-LIKE) ====================
+# ==================== COMMUNITY CHAT ====================
 from jose import JWTError, jwt
+from chat import CHAT_CONTENT_TYPES, utcnow_naive
+
+def _serialize_chat_message(msg: ChatMessageModel, check_availability: bool = False, sender_name: Optional[str] = None) -> dict:
+    """Shared serializer for live websocket frames and REST history,
+    so both always agree on message id (client-side dedupe relies on it).
+
+    `sender_name` avoids touching the lazy-loaded `sender` relationship on a
+    detached instance (which raises DetachedInstanceError after expunge)."""
+    if sender_name is None:
+        state = sa_inspect(msg)
+        # Only touch the relationship when it is already loaded or still bound
+        # to a live session; a detached unloaded 'sender' would raise.
+        if "sender" not in state.unloaded or object_session(msg) is not None:
+            sender_name = msg.sender.username if msg.sender else None
+    payload = {
+        "type": "chat_message",
+        "id": msg.id,
+        "sender_id": msg.sender_id,
+        "sender_name": sender_name,
+        "content": msg.content,
+        "content_type": msg.content_type,
+        "file_id": msg.file_id,
+        "file_url": f"/api/chat/files/{msg.file_id}" if msg.file_id else None,
+        "file_name": msg.file_name,
+        "file_size": msg.file_size,
+        "file_content_type": msg.file_content_type,
+        "timestamp": msg.created_at.isoformat() if msg.created_at else "",
+    }
+    if msg.file_id:
+        payload["file_available"] = (
+            (UPLOAD_DIR / msg.file_id).exists() if check_availability else True
+        )
+    else:
+        payload["file_available"] = False
+    return payload
 
 @app.websocket("/ws/chat/{user_id}")
 async def websocket_chat(websocket: WebSocket, user_id: int):
@@ -797,66 +849,124 @@ async def websocket_chat(websocket: WebSocket, user_id: int):
         await websocket.close(code=4001)
         return
 
-    from database import SessionLocal
-    db = SessionLocal()
+    db = db_session()
     try:
         user = db.query(User).filter(User.email == email).first()
         if not user or user.id != user_id:
             await websocket.close(code=4003)
             return
+        sender_name = user.username
     finally:
         db.close()
 
-    language = websocket.query_params.get("language", "en")
-    await manager.connect(user_id, websocket, language)
-
+    ws_max, ws_window = parse_rate(settings.RATE_LIMIT_WS_MESSAGE)
+    await manager.connect(user_id, websocket)
     try:
+        await websocket.send_json({
+            "type": "system",
+            "content": "Connected to Community Chat",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
         while True:
             data = await websocket.receive_json()
-            recipient_id = data.get("recipient_id")
-            content = data.get("content", "")
-            content_type = data.get("content_type", "text")
-            file_url = data.get("file_url")
-            file_name = data.get("file_name")
-            file_size = data.get("file_size")
-            reference_content_type = data.get("reference_content_type")
-            reference_content_id = data.get("reference_content_id")
 
+            # Per-user flood control: the HTTP rate-limit middleware cannot
+            # see messages once the socket is open.
+            if not rate_limiter.is_allowed(
+                f"ws:{user_id}:message", ws_max, ws_window
+            ):
+                await websocket.send_json({
+                    "type": "error",
+                    "code": "rate_limited",
+                    "content": "You are sending too quickly. Please slow down.",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+                continue
+
+            try:
+                incoming = ChatMessageIn(**data)
+            except Exception:
+                await websocket.send_json({
+                    "type": "error",
+                    "code": "invalid_payload",
+                    "content": "Malformed message.",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+                continue
+
+            content = incoming.content
+            if len(content) > settings.CHAT_MAX_MESSAGE_LENGTH:
+                await websocket.send_json({
+                    "type": "error",
+                    "code": "message_too_long",
+                    "content": f"Message too long (max {settings.CHAT_MAX_MESSAGE_LENGTH} characters).",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+                continue
+
+            content_type = "file" if incoming.file_id else "text"
+            if content_type not in CHAT_CONTENT_TYPES:
+                continue
             if not content and content_type == "text":
                 continue
 
-            sender_lang = manager.get_language(user_id)
+            db = db_session()
+            try:
+                chat_file = None
+                if content_type == "file":
+                    chat_file = db.query(ChatFile).filter(
+                        ChatFile.file_id == incoming.file_id
+                    ).first()
+                    if not chat_file or not (UPLOAD_DIR / chat_file.file_id).exists():
+                        await websocket.send_json({
+                            "type": "error",
+                            "code": "file_unavailable",
+                            "content": "That upload has expired. Please send the file again.",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        })
+                        continue
+                    content = content[: settings.CHAT_MAX_MESSAGE_LENGTH]
 
-            message = {
-                "type": "chat_message",
-                "sender_id": user_id,
-                "recipient_id": recipient_id,
-                "content": content,
-                "original_content": content,
-                "source_language": sender_lang,
-                "target_language": sender_lang,
-                "content_type": content_type,
-                "file_url": file_url,
-                "file_name": file_name,
-                "file_size": file_size,
-                "reference_content_type": reference_content_type,
-                "reference_content_id": reference_content_id,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-
-            if content_type not in ("text", "file", "image", "video", "reference"):
+                record = ChatMessageModel(
+                    sender_id=user_id,
+                    content=content,
+                    content_type=content_type,
+                    file_id=chat_file.file_id if chat_file else None,
+                    file_name=chat_file.filename if chat_file else None,
+                    file_size=chat_file.size if chat_file else None,
+                    file_content_type=chat_file.content_type if chat_file else None,
+                    created_at=utcnow_naive(),
+                )
+                db.add(record)
+                db.commit()
+                db.refresh(record, attribute_names=["sender"])  # eager, safe after expunge
+                db.expunge(record)
+            except Exception as exc:
+                db.rollback()
+                logger.error("chat_persist_failed", extra={"error": str(exc)})
+                await websocket.send_json({
+                    "type": "error",
+                    "code": "storage_error",
+                    "content": "Message could not be saved. Please try again.",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
                 continue
+            finally:
+                db.close()
 
-            for uid in list(active_connections.keys()):
-                recipient_lang = manager.get_language(uid)
-                if recipient_lang and sender_lang and recipient_lang != sender_lang:
-                    message["content"] = await translation_service.translate(content, recipient_lang, sender_lang)
-                else:
-                    message["content"] = content
-                message["target_language"] = recipient_lang
-                await manager.send_to_user(uid, message)
+            message = _serialize_chat_message(record, sender_name=sender_name)
+            # Fresh copy per recipient; the sender is excluded and then sent
+            # its own copy explicitly, so no one gets a shared/mutated dict.
+            await manager.broadcast(dict(message), exclude=user_id)
+            await manager.send_to_user(user_id, dict(message))
     except WebSocketDisconnect:
-        await manager.disconnect(user_id)
+        pass
+    except Exception as exc:
+        logger.warning("chat_socket_error", extra={"user_id": user_id, "error": str(exc)})
+    finally:
+        # Runs on *every* exit path, so no ghost "online" entries survive
+        # an unexpected exception.
+        await manager.disconnect(user_id, websocket)
 
 @app.post("/api/chat/upload")
 async def upload_chat_file(
@@ -868,55 +978,133 @@ async def upload_chat_file(
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail="File type not allowed")
 
-    content = await file.read()
-    if len(content) > settings.CHAT_MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="File too large")
+    client = current_user.id  # per-user, not per-IP: NATs share IPs
+    max_req, window = parse_rate(settings.RATE_LIMIT_CHAT_UPLOAD)
+    if not rate_limiter.is_allowed(f"{client}:/api/chat/upload", max_req, window):
+        raise HTTPException(status_code=429, detail="Too many uploads. Please try again later.")
 
     file_id = f"{uuid.uuid4().hex}{ext}"
     file_path = UPLOAD_DIR / file_id
-    with open(file_path, "wb") as f:
-        f.write(content)
+    written = 0
+    # Stream to disk in chunks so concurrent uploads can't exhaust memory.
+    try:
+        with open(file_path, "wb") as f:
+            while chunk := await file.read(1024 * 1024):
+                written += len(chunk)
+                if written > settings.CHAT_MAX_FILE_SIZE:
+                    raise HTTPException(status_code=400, detail="File too large")
+                f.write(chunk)
+    except HTTPException:
+        file_path.unlink(missing_ok=True)
+        raise
+    except OSError:
+        file_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail="Storage error")
 
-    async with file_lock:
-        file_registry[file_id] = {
-            "owner_id": current_user.id,
-            "filename": filename,
-            "size": len(content),
-            "content_type": file.content_type or "application/octet-stream",
-            "created_at": time.time(),
-        }
+    if written == 0:
+        file_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="File is empty")
+
+    expires_at = utcnow_naive() + timedelta(seconds=settings.CHAT_TTL_SECONDS)
+    db = db_session()
+    try:
+        db.add(ChatFile(
+            file_id=file_id,
+            owner_id=current_user.id,
+            filename=filename[:255],
+            size=written,
+            content_type=file.content_type or "application/octet-stream",
+            expires_at=expires_at,
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+        file_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail="Could not register file")
+    finally:
+        db.close()
 
     return {
         "file_id": file_id,
         "file_url": f"/api/chat/files/{file_id}",
         "filename": filename,
-        "size": len(content),
+        "size": written,
         "content_type": file.content_type,
+        "expires_at": expires_at.isoformat(),
     }
 
 @app.get("/api/chat/files/{file_id}")
 async def download_chat_file(file_id: str, current_user: User = Depends(get_current_user)):
-    async with file_lock:
-        meta = file_registry.get(file_id)
+    # file_id is generated server-side (uuid + whitelisted extension), so it
+    # can never escape UPLOAD_DIR. Never trust a client-supplied name here.
+    db = db_session()
+    try:
+        meta = db.query(ChatFile).filter(ChatFile.file_id == file_id).first()
+    finally:
+        db.close()
 
-    if not meta:
+    if not meta or is_expired(meta.expires_at):
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="File not found or expired")
 
     file_path = UPLOAD_DIR / file_id
     if not file_path.exists():
-        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="File not found on disk")
+        raise HTTPException(status_code=410, detail="This file is no longer available")
 
+    # A public group room means every member may open shared files; ownership
+    # is recorded for audit/moderation rather than used as a read gate.
+    # FileResponse(filename=...) already sets Content-Disposition -- do not
+    # also pass a manual header, which would send the header twice.
     return FileResponse(
         path=str(file_path),
-        filename=meta["filename"],
-        media_type=meta["content_type"],
-        headers={"Content-Disposition": f'attachment; filename="{meta["filename"]}"'},
+        filename=meta.filename,
+        media_type=meta.content_type,
     )
+
+@app.get("/api/chat/history")
+async def get_chat_history(
+    limit: int = settings.CHAT_HISTORY_LIMIT,
+    before: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+):
+    """Most recent messages, newest-first query returned chronologically.
+    `before` is a created_at isoformat cursor for scrolling back."""
+    limit = max(1, min(limit, 200))
+    db = db_session()
+    try:
+        query = db.query(ChatMessageModel).options(
+            selectinload(ChatMessageModel.sender)
+        )
+        if before:
+            try:
+                cursor = datetime.fromisoformat(before.replace("Z", "+00:00"))
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid 'before' cursor")
+            query = query.filter(ChatMessageModel.created_at < cursor)
+        rows = query.order_by(desc(ChatMessageModel.created_at)).limit(limit).all()
+    finally:
+        db.close()
+
+    items = [_serialize_chat_message(r, check_availability=True) for r in reversed(rows)]
+    return {
+        "messages": items,
+        "has_more": len(rows) == limit,
+        "next_cursor": rows[-1].created_at.isoformat() if rows else None,
+    }
 
 @app.get("/api/chat/online")
 async def get_online_users(current_user: User = Depends(get_current_user)):
-    online = [
-        {"user_id": uid, "language": manager.get_language(uid)}
-        for uid in active_connections.keys()
-    ]
-    return {"online": online}
+    db = db_session()
+    try:
+        online = (
+            db.query(User)
+            .filter(User.id.in_(list(active_connections.keys())))
+            .all()
+        )
+        return {
+            "online": [
+                {"user_id": u.id, "username": u.username, "is_admin": bool(u.is_admin)}
+                for u in online
+            ]
+        }
+    finally:
+        db.close()

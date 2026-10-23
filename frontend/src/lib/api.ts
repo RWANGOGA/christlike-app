@@ -105,6 +105,32 @@ export const api = {
   logout: () => {
     localStorage.removeItem('token');
     window.location.href = '/';
+  },
+
+  // Multipart upload: let the browser set the Content-Type boundary.
+  upload: async (url: string, file: File) => {
+    const token = localStorage.getItem('token');
+    if (!token) throw new Error('Not authenticated');
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const res = await fetch(`${API_URL}${url}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData,
+    });
+
+    if (res.status === 401) {
+      localStorage.removeItem('token');
+      window.location.href = '/';
+      throw new Error('Session expired');
+    }
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.detail || 'Upload failed');
+    }
+    return res.json();
   }
 };
 

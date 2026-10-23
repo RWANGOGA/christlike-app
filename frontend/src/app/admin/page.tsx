@@ -3,13 +3,12 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import Sidebar from '@/components/Sidebar';
-import { Sunrise, Mic, ShieldAlert, Video, Lightbulb, Heart, Users, Menu } from 'lucide-react';
+import { Sunrise, Mic, ShieldAlert, Video, Lightbulb, Heart, Users } from 'lucide-react';
 
 export default function AdminDashboard() {
   const [checking, setChecking] = useState(true);
   const [allowed, setAllowed] = useState(false);
   const [tab, setTab] = useState<'devotions' | 'series' | 'sermons' | 'facts' | 'prayers' | 'users'>('devotions');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const router = useRouter();
 
   const [devotions, setDevotions] = useState<any[]>([]);
@@ -141,27 +140,13 @@ export default function AdminDashboard() {
 
   return (
     <div className="flex bg-[#FBF7EE] min-h-screen">
-      {/* Sidebar with mobile support */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#23213A]/10 transform transition-transform duration-300 md:static md:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <Sidebar />
-      </div>
+      {/* Sidebar owns its own mobile drawer + hamburger; wrapping it in a
+          second drawer here rendered two overlapping sidebars on phones. */}
+      <Sidebar />
 
       {/* Main Content */}
-      <div className="flex-1 min-w-0 md:ml-64 transition-all duration-300">
-        {/* Mobile Header */}
-        <header className="sticky top-0 z-40 bg-[#FBF7EE] border-b border-[#23213A]/10 md:hidden">
-          <div className="flex items-center justify-between px-4 py-4">
-            <div className="flex items-center gap-3">
-              <ShieldAlert className="w-6 h-6 text-[#E3A857]" strokeWidth={1.5} />
-              <h1 className="font-[family-name:var(--font-display)] text-xl text-[#23213A]">Admin</h1>
-            </div>
-            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 rounded-lg hover:bg-[#23213A]/5">
-              <Menu className="w-6 h-6" />
-            </button>
-          </div>
-        </header>
-
-        <div className="p-4 md:p-8 max-w-5xl mx-auto">
+      <div className="flex-1 min-w-0 ml-0 md:ml-64 transition-all duration-300">
+        <div className="p-4 pt-20 md:p-8 md:pt-8 max-w-5xl mx-auto">
           {/* Desktop Header */}
           <header className="hidden md:flex items-center gap-3 mb-8">
             <ShieldAlert className="w-6 h-6 text-[#E3A857]" strokeWidth={1.5} />
@@ -169,6 +154,12 @@ export default function AdminDashboard() {
               <h1 className="font-[family-name:var(--font-display)] text-3xl text-[#23213A]">Admin Dashboard</h1>
               <p className="text-[#23213A]/50">Manage content and community.</p>
             </div>
+          </header>
+
+          {/* Mobile header (title only; navigation lives in the Sidebar top bar) */}
+          <header className="flex md:hidden items-center gap-2 mb-4">
+            <ShieldAlert className="w-5 h-5 text-[#E3A857]" strokeWidth={1.5} />
+            <h1 className="font-[family-name:var(--font-display)] text-xl text-[#23213A]">Admin Dashboard</h1>
           </header>
 
           {/* Tabs */}
@@ -317,11 +308,6 @@ export default function AdminDashboard() {
           )}
         </div>
       </div>
-
-      {/* Backdrop for mobile sidebar */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />
-      )}
     </div>
   );
 }

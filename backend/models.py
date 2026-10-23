@@ -1,4 +1,5 @@
 # backend/models.py
+import uuid as _uuid
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean, Float, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -30,6 +31,7 @@ class User(Base):
     notes = relationship("UserNote", back_populates="user")
     prayer_requests = relationship("PrayerRequest", back_populates="user")
     highlights = relationship("UserHighlight", back_populates="user")
+    chat_messages = relationship("ChatMessage", back_populates="sender")
 
 # ==================== BIBLE MODELS ====================
 class BibleBook(Base):
@@ -202,6 +204,41 @@ class UserNote(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     user = relationship("User", back_populates="notes")
+
+# ==================== COMMUNITY CHAT ====================
+class ChatFile(Base):
+    """Metadata for a file uploaded through the community chat.
+    The bytes live on disk under CHAT_UPLOAD_DIR keyed by file_id;
+    this row outlives the payload so persisted messages can report
+    'file expired' instead of silently 404ing."""
+    __tablename__ = "chat_files"
+
+    file_id = Column(String(120), primary_key=True)  # uuid + extension, doubles as the disk filename
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    filename = Column(String(255), nullable=False)
+    size = Column(Integer, nullable=False)
+    content_type = Column(String(100), default="application/octet-stream")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
+
+    owner = relationship("User", backref="chat_files")
+
+class ChatMessage(Base):
+    """Persisted community chat message. id is a server-assigned uuid string
+    so clients can dedupe live websocket echoes against restored history."""
+    __tablename__ = "chat_messages"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(_uuid.uuid4()))
+    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    content = Column(Text, nullable=False, default="")
+    content_type = Column(String(20), nullable=False, default="text")  # text | file
+    file_id = Column(String(120), ForeignKey("chat_files.file_id"), nullable=True)
+    file_name = Column(String(255), nullable=True)
+    file_size = Column(Integer, nullable=True)
+    file_content_type = Column(String(100), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    sender = relationship("User", back_populates="chat_messages")
 
 # ==================== CONTENT COMPLETION TRACKING ====================
 class ContentCompletion(Base):

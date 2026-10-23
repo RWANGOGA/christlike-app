@@ -10,10 +10,20 @@ class RateLimiter:
     def __init__(self):
         self._store = defaultdict(list)
         self._lock = threading.Lock()
+        self._calls = 0
 
     def is_allowed(self, key: str, max_requests: int, window_seconds: int) -> bool:
         now = time.time()
         with self._lock:
+            self._calls += 1
+            # Periodic sweep: keys are per client/route (and now per chat user),
+            # so without pruning the store grows without bound.
+            if self._calls % 1000 == 0:
+                horizon = now - 3600
+                self._store = defaultdict(list, {
+                    k: v for k, v in self._store.items()
+                    if v and v[-1] > horizon
+                })
             timestamps = [t for t in self._store[key] if t > now - window_seconds]
             self._store[key] = timestamps
             if len(timestamps) >= max_requests:

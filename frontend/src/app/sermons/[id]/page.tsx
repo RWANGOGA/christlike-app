@@ -43,7 +43,7 @@ export default function SeriesPage() {
     <div className="flex bg-[#FBF7EE] min-h-screen">
       <Sidebar />
       
-      <div className="flex-1 ml-0 lg:ml-64 p-4 md:p-6 lg:p-8 max-w-6xl mx-auto w-full">
+      <div className="flex-1 min-w-0 ml-0 md:ml-64 p-4 pt-20 md:p-6 md:pt-6 lg:p-8 max-w-6xl mx-auto w-full">
         <Link href="/sermons" className="inline-flex items-center gap-2 text-sm text-[#23213A]/60 hover:text-[#23213A] mb-6 transition">
           <ArrowLeft className="w-4 h-4" /> Back to Series
         </Link>

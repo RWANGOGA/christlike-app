@@ -44,7 +44,7 @@ export default function SettingsPage() {
   return (
     <div className="flex bg-[#FBF7EE] min-h-screen">
       <Sidebar />
-      <div className="flex-1 ml-64 p-8 max-w-3xl mx-auto">
+      <div className="flex-1 min-w-0 ml-0 md:ml-64 p-4 pt-20 md:p-8 md:pt-8 max-w-3xl mx-auto">
         <h1 className="font-[family-name:var(--font-display)] text-2xl text-[#23213A] mb-8">Account Settings</h1>
         
         {message && <p className="text-sm text-[#23213A]/70 bg-[#E3A857]/10 border border-[#E3A857]/20 rounded-lg px-4 py-2.5 mb-6">{message}</p>}
